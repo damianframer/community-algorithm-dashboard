@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import { VectorsContent } from "@/features/vectors/components/vectors-content";
 import { VectorsSidebar } from "@/features/vectors/components/vectors-sidebar";
 import {
@@ -27,7 +29,14 @@ export function VectorsWorkspace() {
   );
 
   const rankingSettings = getVectorRankingSettings(sidebarSettings);
+  const savedRankingSettings = getVectorRankingSettings(savedSidebarSettings);
+  const isEditing = !areSidebarSettingsEqual(
+    sidebarSettings,
+    savedSidebarSettings,
+  );
   const rankedVectors = scoreVectors(rankingSettings);
+  const savedRankedVectors = scoreVectors(savedRankingSettings);
+  const positionChanges = getPositionChanges(rankedVectors, savedRankedVectors);
 
   return (
     <>
@@ -40,7 +49,12 @@ export function VectorsWorkspace() {
         onResetSettings={resetSidebarSettings}
         onSaveSettings={saveSidebarSettings}
       />
-      <VectorsContent vectors={rankedVectors} searchQuery={searchQuery} />
+      <VectorsContent
+        vectors={rankedVectors}
+        positionChanges={positionChanges}
+        searchQuery={searchQuery}
+        showPositionChanges={isEditing}
+      />
     </>
   );
 }

@@ -118,6 +118,13 @@ export function cloneSidebarSettingsState(
   ) as SidebarSettingsState;
 }
 
+export function areSidebarSettingsEqual(
+  left: SidebarSettingsState,
+  right: SidebarSettingsState,
+) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
 function clampValue(value: number, min: number, max: number) {
   return Math.min(max, Math.max(min, value));
 }

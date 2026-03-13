@@ -3,6 +3,8 @@
 import Link from "next/link";
 import { useDeferredValue, useEffect, useState, type CSSProperties } from "react";
 
+import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
+import type { PositionChange } from "@/features/marketplace/lib/position-change";
 import {
   applyFeedRules,
   formatMetricValue,
@@ -66,9 +68,11 @@ type TemplatesContentProps = {
   searchQuery: string;
   pricingFilter: TemplatePricingFilterValue;
   statsFilter: StatsFilterValue;
+  positionChanges: ReadonlyMap<string, PositionChange>;
   rankedTemplates: RankedTemplate[];
   rankingSettings: RankingSettings;
   selectedTemplate: RankedTemplate | null;
+  showPositionChanges: boolean;
   onPricingFilterChange: (value: TemplatePricingFilterValue) => void;
   onStatsFilterChange: (value: StatsFilterValue) => void;
 };
@@ -396,10 +400,12 @@ export function TemplatesContent({
   onPricingFilterChange,
   onStatsFilterChange,
   pricingFilter,
+  positionChanges,
   rankedTemplates: allRankedTemplates,
   rankingSettings,
   searchQuery,
   selectedTemplate,
+  showPositionChanges,
   statsFilter,
 }: TemplatesContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
@@ -471,8 +477,13 @@ export function TemplatesContent({
                   <div
                     className="templateImagePlaceholder"
                     style={getTemplatePreviewStyle(template)}
-                    aria-hidden="true"
-                  />
+                  >
+                    {showPositionChanges ? (
+                      <PositionChangeBadge
+                        change={positionChanges.get(template.name)}
+                      />
+                    ) : null}
+                  </div>
 
                   <div className="templateCardHeader">
                     <div className="templateNameWrap">

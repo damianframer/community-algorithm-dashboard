@@ -3,7 +3,10 @@
 import { useState } from "react";
 
 import { SettingsInputGroup } from "@/features/settings/components/setting-controls";
-import type { SidebarSettingsState } from "@/features/settings/lib/settings-state";
+import {
+  areSidebarSettingsEqual,
+  type SidebarSettingsState,
+} from "@/features/settings/lib/settings-state";
 import { pluginsSidebarSections } from "@/features/plugins/lib/sidebar-settings";
 
 type PluginsSidebarProps = {
@@ -53,8 +56,7 @@ export function PluginsSidebar({
       ]),
     ),
   );
-  const isDirty =
-    JSON.stringify(settingsState) !== JSON.stringify(savedSettingsState);
+  const isDirty = !areSidebarSettingsEqual(settingsState, savedSettingsState);
 
   return (
     <aside className={isDirty ? "sidebar hasPendingChanges" : "sidebar"}>

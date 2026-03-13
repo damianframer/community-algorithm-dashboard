@@ -274,6 +274,8 @@ button {
 }
 
 .templateImagePlaceholder {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   aspect-ratio: 4 / 3;
   border-radius: 8px;
@@ -292,6 +294,8 @@ button {
 }
 
 .pluginThumbnail {
+  position: relative;
+  overflow: hidden;
   width: 100%;
   aspect-ratio: 4 / 3;
   border-radius: 8px;
@@ -299,6 +303,69 @@ button {
   box-shadow:
     inset 0 0 0 1px rgba(255, 255, 255, 0.04),
     0 0 0 1px rgba(255, 255, 255, 0.03);
+}
+
+.positionChangeBadge {
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  min-width: 30px;
+  height: 21px;
+  padding: 3px 8px 3px 6px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+  white-space: nowrap;
+}
+
+.positionChangeBadge.up {
+  background: #1e2f12;
+  border-color: #253c15;
+  color: #81ad80;
+}
+
+.positionChangeBadge.stay {
+  min-width: 30px;
+  padding: 3px 8px;
+  background: #2a2a2a;
+  border-color: #464646;
+  color: #717171;
+}
+
+.positionChangeBadge.down {
+  background: #2f1212;
+  border-color: #4b2525;
+  color: #ad8080;
+}
+
+.positionChangeBadgeIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 9px;
+  flex-shrink: 0;
+}
+
+.positionChangeIcon {
+  width: 7px;
+  height: 7px;
+}
+
+.positionChangeIcon.down {
+  transform: rotate(180deg);
+}
+
+.positionChangeBadgeValue {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .templateCardHeader,
