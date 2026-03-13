@@ -2,13 +2,17 @@
 
 import { useDeferredValue } from "react";
 
+import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
+import type { PositionChange } from "@/features/marketplace/lib/position-change";
 import { formatScore } from "@/features/templates/lib/template-ranking";
 
 import type { RankedTutorial } from "@/features/tutorials/lib/tutorial-ranking";
 
 type TutorialsContentProps = {
+  positionChanges: ReadonlyMap<string, PositionChange>;
   tutorials: RankedTutorial[];
   searchQuery: string;
+  showPositionChanges: boolean;
 };
 
 function getTutorialMatchScore(tutorial: RankedTutorial, query: string) {
@@ -36,8 +40,10 @@ function getTutorialMatchScore(tutorial: RankedTutorial, query: string) {
 }
 
 export function TutorialsContent({
+  positionChanges,
   tutorials: allTutorials,
   searchQuery,
+  showPositionChanges,
 }: TutorialsContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visibleTutorials = deferredSearchQuery.trim()
@@ -69,7 +75,13 @@ export function TutorialsContent({
           <div className="pluginGrid">
             {visibleTutorials.map((tutorial) => (
               <article key={tutorial.name} className="pluginCard">
-                <div className="pluginThumbnail" aria-hidden="true" />
+                <div className="pluginThumbnail">
+                  {showPositionChanges ? (
+                    <PositionChangeBadge
+                      change={positionChanges.get(tutorial.name)}
+                    />
+                  ) : null}
+                </div>
 
                 <div className="templateCardHeader">
                   <div className="templateNameWrap">

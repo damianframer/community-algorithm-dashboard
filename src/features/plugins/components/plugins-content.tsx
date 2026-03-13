@@ -2,13 +2,17 @@
 
 import { useDeferredValue } from "react";
 
+import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
+import type { PositionChange } from "@/features/marketplace/lib/position-change";
 import { formatScore } from "@/features/templates/lib/template-ranking";
 
 import type { RankedPlugin } from "@/features/plugins/lib/plugin-ranking";
 
 type PluginsContentProps = {
   plugins: RankedPlugin[];
+  positionChanges: ReadonlyMap<string, PositionChange>;
   searchQuery: string;
+  showPositionChanges: boolean;
 };
 
 function getPluginMatchScore(plugin: RankedPlugin, query: string) {
@@ -37,7 +41,9 @@ function getPluginMatchScore(plugin: RankedPlugin, query: string) {
 
 export function PluginsContent({
   plugins: allPlugins,
+  positionChanges,
   searchQuery,
+  showPositionChanges,
 }: PluginsContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visiblePlugins = deferredSearchQuery.trim()
@@ -69,7 +75,13 @@ export function PluginsContent({
           <div className="pluginGrid">
             {visiblePlugins.map((plugin) => (
               <article key={plugin.name} className="pluginCard">
-                <div className="pluginThumbnail" aria-hidden="true" />
+                <div className="pluginThumbnail">
+                  {showPositionChanges ? (
+                    <PositionChangeBadge
+                      change={positionChanges.get(plugin.name)}
+                    />
+                  ) : null}
+                </div>
 
                 <div className="templateCardHeader">
                   <div className="templateNameWrap">

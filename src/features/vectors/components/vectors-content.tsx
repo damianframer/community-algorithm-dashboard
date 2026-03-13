@@ -2,13 +2,17 @@
 
 import { useDeferredValue } from "react";
 
+import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
+import type { PositionChange } from "@/features/marketplace/lib/position-change";
 import { formatScore } from "@/features/templates/lib/template-ranking";
 
 import type { RankedVector } from "@/features/vectors/lib/vector-ranking";
 
 type VectorsContentProps = {
+  positionChanges: ReadonlyMap<string, PositionChange>;
   vectors: RankedVector[];
   searchQuery: string;
+  showPositionChanges: boolean;
 };
 
 function getVectorMatchScore(vector: RankedVector, query: string) {
@@ -36,8 +40,10 @@ function getVectorMatchScore(vector: RankedVector, query: string) {
 }
 
 export function VectorsContent({
+  positionChanges,
   vectors: allVectors,
   searchQuery,
+  showPositionChanges,
 }: VectorsContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visibleVectors = deferredSearchQuery.trim()
@@ -69,7 +75,13 @@ export function VectorsContent({
           <div className="pluginGrid">
             {visibleVectors.map((vector) => (
               <article key={vector.name} className="pluginCard">
-                <div className="pluginThumbnail" aria-hidden="true" />
+                <div className="pluginThumbnail">
+                  {showPositionChanges ? (
+                    <PositionChangeBadge
+                      change={positionChanges.get(vector.name)}
+                    />
+                  ) : null}
+                </div>
 
                 <div className="templateCardHeader">
                   <div className="templateNameWrap">

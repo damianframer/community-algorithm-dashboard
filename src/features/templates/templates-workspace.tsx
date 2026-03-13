@@ -1,6 +1,8 @@
 "use client";
 
 import { TemplateListSidebar } from "@/features/templates/components/template-list-sidebar";
+import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import {
   TemplatesContent,
 } from "@/features/templates/components/templates-content";
@@ -38,8 +40,19 @@ export function TemplatesWorkspace({
   } = useTemplatesWorkspaceState();
 
   const rankingSettings = getRankingSettings(sidebarSettings);
+  const savedRankingSettings = getRankingSettings(savedSidebarSettings);
+  const isEditing = !areSidebarSettingsEqual(
+    sidebarSettings,
+    savedSidebarSettings,
+  );
   const rankedTemplates = scoreTemplates(rankingSettings);
+  const savedRankedTemplates = scoreTemplates(savedRankingSettings);
   const feedTemplates = applyFeedRules(rankedTemplates, rankingSettings);
+  const savedFeedTemplates = applyFeedRules(
+    savedRankedTemplates,
+    savedRankingSettings,
+  );
+  const positionChanges = getPositionChanges(feedTemplates, savedFeedTemplates);
   const selectedTemplate = selectedTemplateSlug
     ? rankedTemplates.find(
         (template) => getTemplateSlug(template.name) === selectedTemplateSlug,
@@ -74,6 +87,8 @@ export function TemplatesWorkspace({
         statsFilter={statsFilter}
         rankedTemplates={rankedTemplates}
         rankingSettings={rankingSettings}
+        positionChanges={positionChanges}
+        showPositionChanges={isEditing}
         selectedTemplate={selectedTemplate}
         onPricingFilterChange={setPricingFilter}
         onStatsFilterChange={setStatsFilter}

@@ -8,6 +8,8 @@ import {
   getComponentRankingSettings,
   scoreComponents,
 } from "@/features/components/lib/component-ranking";
+import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import { componentsSidebarSections } from "@/features/components/lib/sidebar-settings";
 import { usePersistedSidebarSettings } from "@/features/settings/lib/persisted-sidebar-settings";
 
@@ -27,7 +29,17 @@ export function ComponentsWorkspace() {
   );
 
   const rankingSettings = getComponentRankingSettings(sidebarSettings);
+  const savedRankingSettings = getComponentRankingSettings(savedSidebarSettings);
+  const isEditing = !areSidebarSettingsEqual(
+    sidebarSettings,
+    savedSidebarSettings,
+  );
   const rankedComponents = scoreComponents(rankingSettings);
+  const savedRankedComponents = scoreComponents(savedRankingSettings);
+  const positionChanges = getPositionChanges(
+    rankedComponents,
+    savedRankedComponents,
+  );
 
   return (
     <>
@@ -40,7 +52,12 @@ export function ComponentsWorkspace() {
         onResetSettings={resetSidebarSettings}
         onSaveSettings={saveSidebarSettings}
       />
-      <ComponentsContent components={rankedComponents} searchQuery={searchQuery} />
+      <ComponentsContent
+        components={rankedComponents}
+        positionChanges={positionChanges}
+        searchQuery={searchQuery}
+        showPositionChanges={isEditing}
+      />
     </>
   );
 }

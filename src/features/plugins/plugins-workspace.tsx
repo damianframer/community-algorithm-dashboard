@@ -2,8 +2,10 @@
 
 import { useState } from "react";
 
+import { getPositionChanges } from "@/features/marketplace/lib/position-change";
 import { PluginsContent } from "@/features/plugins/components/plugins-content";
 import { PluginsSidebar } from "@/features/plugins/components/plugins-sidebar";
+import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import {
   getPluginRankingSettings,
   scorePlugins,
@@ -27,7 +29,14 @@ export function PluginsWorkspace() {
   );
 
   const rankingSettings = getPluginRankingSettings(sidebarSettings);
+  const savedRankingSettings = getPluginRankingSettings(savedSidebarSettings);
+  const isEditing = !areSidebarSettingsEqual(
+    sidebarSettings,
+    savedSidebarSettings,
+  );
   const rankedPlugins = scorePlugins(rankingSettings);
+  const savedRankedPlugins = scorePlugins(savedRankingSettings);
+  const positionChanges = getPositionChanges(rankedPlugins, savedRankedPlugins);
 
   return (
     <>
@@ -40,7 +49,12 @@ export function PluginsWorkspace() {
         onResetSettings={resetSidebarSettings}
         onSaveSettings={saveSidebarSettings}
       />
-      <PluginsContent plugins={rankedPlugins} searchQuery={searchQuery} />
+      <PluginsContent
+        plugins={rankedPlugins}
+        positionChanges={positionChanges}
+        searchQuery={searchQuery}
+        showPositionChanges={isEditing}
+      />
     </>
   );
 }

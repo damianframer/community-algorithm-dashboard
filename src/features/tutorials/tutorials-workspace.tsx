@@ -2,6 +2,8 @@
 
 import { useState } from "react";
 
+import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import { TutorialsContent } from "@/features/tutorials/components/tutorials-content";
 import { TutorialsSidebar } from "@/features/tutorials/components/tutorials-sidebar";
 import {
@@ -27,7 +29,17 @@ export function TutorialsWorkspace() {
   );
 
   const rankingSettings = getTutorialRankingSettings(sidebarSettings);
+  const savedRankingSettings = getTutorialRankingSettings(savedSidebarSettings);
+  const isEditing = !areSidebarSettingsEqual(
+    sidebarSettings,
+    savedSidebarSettings,
+  );
   const rankedTutorials = scoreTutorials(rankingSettings);
+  const savedRankedTutorials = scoreTutorials(savedRankingSettings);
+  const positionChanges = getPositionChanges(
+    rankedTutorials,
+    savedRankedTutorials,
+  );
 
   return (
     <>
@@ -40,7 +52,12 @@ export function TutorialsWorkspace() {
         onResetSettings={resetSidebarSettings}
         onSaveSettings={saveSidebarSettings}
       />
-      <TutorialsContent tutorials={rankedTutorials} searchQuery={searchQuery} />
+      <TutorialsContent
+        tutorials={rankedTutorials}
+        positionChanges={positionChanges}
+        searchQuery={searchQuery}
+        showPositionChanges={isEditing}
+      />
     </>
   );
 }
