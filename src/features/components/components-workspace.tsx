@@ -9,6 +9,7 @@ import {
   scoreComponents,
 } from "@/features/components/lib/component-ranking";
 import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import { componentsSidebarSections } from "@/features/components/lib/sidebar-settings";
 import { usePersistedSidebarSettings } from "@/features/settings/lib/persisted-sidebar-settings";
@@ -36,9 +37,11 @@ export function ComponentsWorkspace() {
   );
   const rankedComponents = scoreComponents(rankingSettings);
   const savedRankedComponents = scoreComponents(savedRankingSettings);
+  const orderedComponents = interleaveByPricing(rankedComponents);
+  const orderedSavedComponents = interleaveByPricing(savedRankedComponents);
   const positionChanges = getPositionChanges(
-    rankedComponents,
-    savedRankedComponents,
+    orderedComponents,
+    orderedSavedComponents,
   );
 
   return (
@@ -53,7 +56,7 @@ export function ComponentsWorkspace() {
         onSaveSettings={saveSidebarSettings}
       />
       <ComponentsContent
-        components={rankedComponents}
+        components={orderedComponents}
         positionChanges={positionChanges}
         searchQuery={searchQuery}
         showPositionChanges={isEditing}

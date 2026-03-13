@@ -5,6 +5,7 @@ import { useDeferredValue, useEffect, useState, type CSSProperties } from "react
 
 import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
 import type { PositionChange } from "@/features/marketplace/lib/position-change";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import {
   applyFeedRules,
   formatMetricValue,
@@ -409,9 +410,12 @@ export function TemplatesContent({
   statsFilter,
 }: TemplatesContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
-  const rankedTemplates = pricingFilter === "all"
-    ? allRankedTemplates
-    : allRankedTemplates.filter((template) => template.pricingType === pricingFilter);
+  const rankedTemplates =
+    pricingFilter === "all"
+      ? allRankedTemplates
+      : allRankedTemplates.filter(
+          (template) => template.pricingType === pricingFilter,
+        );
   const visibleTemplates = deferredSearchQuery.trim()
     ? rankedTemplates
         .map((template) => ({
@@ -425,7 +429,7 @@ export function TemplatesContent({
             right.template.finalScore - left.template.finalScore,
         )
         .map(({ template }) => template)
-    : applyFeedRules(rankedTemplates, rankingSettings);
+    : interleaveByPricing(applyFeedRules(rankedTemplates, rankingSettings));
   const visibleStats = statsFilter === "none" ? null : statsFilter;
 
   if (selectedTemplate) {

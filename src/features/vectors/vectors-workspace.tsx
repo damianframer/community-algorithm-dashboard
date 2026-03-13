@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import { VectorsContent } from "@/features/vectors/components/vectors-content";
 import { VectorsSidebar } from "@/features/vectors/components/vectors-sidebar";
@@ -36,7 +37,9 @@ export function VectorsWorkspace() {
   );
   const rankedVectors = scoreVectors(rankingSettings);
   const savedRankedVectors = scoreVectors(savedRankingSettings);
-  const positionChanges = getPositionChanges(rankedVectors, savedRankedVectors);
+  const orderedVectors = interleaveByPricing(rankedVectors);
+  const orderedSavedVectors = interleaveByPricing(savedRankedVectors);
+  const positionChanges = getPositionChanges(orderedVectors, orderedSavedVectors);
 
   return (
     <>
@@ -50,7 +53,7 @@ export function VectorsWorkspace() {
         onSaveSettings={saveSidebarSettings}
       />
       <VectorsContent
-        vectors={rankedVectors}
+        vectors={orderedVectors}
         positionChanges={positionChanges}
         searchQuery={searchQuery}
         showPositionChanges={isEditing}

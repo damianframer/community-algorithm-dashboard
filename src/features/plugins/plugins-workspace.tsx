@@ -3,6 +3,7 @@
 import { useState } from "react";
 
 import { getPositionChanges } from "@/features/marketplace/lib/position-change";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { PluginsContent } from "@/features/plugins/components/plugins-content";
 import { PluginsSidebar } from "@/features/plugins/components/plugins-sidebar";
 import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
@@ -36,7 +37,9 @@ export function PluginsWorkspace() {
   );
   const rankedPlugins = scorePlugins(rankingSettings);
   const savedRankedPlugins = scorePlugins(savedRankingSettings);
-  const positionChanges = getPositionChanges(rankedPlugins, savedRankedPlugins);
+  const orderedPlugins = interleaveByPricing(rankedPlugins);
+  const orderedSavedPlugins = interleaveByPricing(savedRankedPlugins);
+  const positionChanges = getPositionChanges(orderedPlugins, orderedSavedPlugins);
 
   return (
     <>
@@ -50,7 +53,7 @@ export function PluginsWorkspace() {
         onSaveSettings={saveSidebarSettings}
       />
       <PluginsContent
-        plugins={rankedPlugins}
+        plugins={orderedPlugins}
         positionChanges={positionChanges}
         searchQuery={searchQuery}
         showPositionChanges={isEditing}
