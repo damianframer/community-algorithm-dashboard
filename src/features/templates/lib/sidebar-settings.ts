@@ -45,7 +45,7 @@ export const templatesSidebarSections: SettingSection[] = [
         description: "How far back the system looks when calculating activity. Higher value: older activity counts more.",
         kind: "dropdown",
         initialValue: "30 days",
-        options: ["7 days", "14 days", "30 days", "60 days", "90 days"],
+        options: ["7 days", "30 days", "90 days"],
       },
       { label: "Recency weight", description: "Controls how strongly recent activity affects ranking. Higher value: recent performance matters more.", kind: "slider", initialValue: 65, min: 0, max: 100, step: 5, mode: "integer" },
       { label: "Lifetime weight", description: "Controls how much long-term historical performance affects ranking. Higher value: established templates stay visible longer.", kind: "slider", initialValue: 35, min: 0, max: 100, step: 5, mode: "integer" },

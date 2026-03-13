@@ -8,7 +8,7 @@ import { getTemplateSlug } from "@/features/templates/lib/template-paths";
 export type TemplatePricingType = "free" | "paid";
 export type TemplateOverride = "none" | "great" | "bad";
 export type StatsRange = "week" | "month";
-export type LookbackWindow = "7 days" | "14 days" | "30 days" | "60 days" | "90 days";
+export type LookbackWindow = "7 days" | "30 days" | "90 days";
 export type MomentumWindow = "3 days" | "7 days" | "14 days" | "30 days";
 
 type MetricTuple = [views: number, previews: number, remixes: number, conversions: number];
@@ -22,7 +22,7 @@ export type RankingMetricSet = {
   views: number;
 };
 
-type TemplateSeed = {
+export type TemplateSeed = {
   adminOverride: TemplateOverride;
   ageDays: number;
   category: string;
@@ -43,7 +43,9 @@ type TemplateSeed = {
   previewGlow: string;
   pricingLabel: string;
   pricingType: TemplatePricingType;
+  quarter?: MetricTuple;
   revenuePerConversion: number;
+  thumbnailUrl?: string;
   week: MetricTuple;
   newUserRate: number;
 };
@@ -108,9 +110,10 @@ export type RankingSettings = {
   viewsWeight: number;
 };
 
-type TemplateDefinition = Omit<TemplateSeed, "month" | "week"> & {
+type TemplateDefinition = Omit<TemplateSeed, "month" | "quarter" | "week"> & {
   lifetime: RankingMetricSet;
   month: RankingMetricSet;
+  quarter: RankingMetricSet;
   thumbnailUrl?: string;
   week: RankingMetricSet;
 };
@@ -713,18 +716,32 @@ function buildLifetimeMetrics(monthMetrics: RankingMetricSet, ageDays: number) {
   return scaleMetricSet(monthMetrics, lifetimeMultiplier);
 }
 
-const templateDefinitions: TemplateDefinition[] = templateSeeds.map((seed) => {
+function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string): TemplateDefinition {
   const week = buildMetricSet(seed.week, seed.revenuePerConversion, seed.newUserRate);
   const month = buildMetricSet(seed.month, seed.revenuePerConversion, seed.newUserRate);
+  const quarter = seed.quarter
+    ? buildMetricSet(seed.quarter, seed.revenuePerConversion, seed.newUserRate)
+    : scaleMetricSet(month, 2.75);
 
   return {
     ...seed,
-    thumbnailUrl: defaultFeedThumbnailAssignments.get(seed.name),
+    thumbnailUrl: seed.thumbnailUrl ?? fallbackThumbnail,
     week,
     month,
+    quarter,
     lifetime: buildLifetimeMetrics(month, seed.ageDays),
   };
-});
+}
+
+const defaultTemplateDefinitions: TemplateDefinition[] = templateSeeds.map((seed) =>
+  buildDefinitionFromSeed(seed, defaultFeedThumbnailAssignments.get(seed.name)),
+);
+
+function buildTemplateDefinitions(seeds: TemplateSeed[]): TemplateDefinition[] {
+  return seeds.map((seed) =>
+    buildDefinitionFromSeed(seed, defaultFeedThumbnailAssignments.get(seed.name)),
+  );
+}
 
 function getNumericSettingValue(
   settings: SidebarSettingsState,
@@ -787,14 +804,10 @@ function resolveRecentMetrics(
   switch (lookbackWindow) {
     case "7 days":
       return template.week;
-    case "14 days":
-      return blendMetricSets(template.week, template.month, 7 / 23);
     case "30 days":
       return template.month;
-    case "60 days":
-      return capMetricSet(scaleMetricSet(template.month, 2), template.lifetime);
     case "90 days":
-      return capMetricSet(scaleMetricSet(template.month, 2.75), template.lifetime);
+      return template.quarter;
     default:
       return template.month;
   }
@@ -1098,8 +1111,9 @@ function getTemplateScoreDetails(
   };
 }
 
-export function scoreTemplates(settings: RankingSettings): RankedTemplate[] {
-  return templateDefinitions
+export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]): RankedTemplate[] {
+  const definitions = seeds ? buildTemplateDefinitions(seeds) : defaultTemplateDefinitions;
+  return definitions
     .map((template) => {
       const scoreDetails = getTemplateScoreDetails(template, settings);
 
@@ -1147,12 +1161,12 @@ export function scoreTemplates(settings: RankingSettings): RankedTemplate[] {
 
 export function getAllTemplateSlugs() {
   return Array.from(
-    new Set(templateDefinitions.map((template) => getTemplateSlug(template.name))),
+    new Set(defaultTemplateDefinitions.map((template) => getTemplateSlug(template.name))),
   );
 }
 
 export function hasTemplateSlug(templateSlug: string) {
-  return templateDefinitions.some(
+  return defaultTemplateDefinitions.some(
     (template) => getTemplateSlug(template.name) === templateSlug,
   );
 }
@@ -1283,8 +1297,10 @@ export type ScoreBreakdownRow = {
 export function getScoreBreakdown(
   templateName: string,
   settings: RankingSettings,
+  seeds?: TemplateSeed[],
 ): ScoreBreakdownRow[] {
-  const template = templateDefinitions.find((t) => t.name === templateName);
+  const definitions = seeds ? buildTemplateDefinitions(seeds) : defaultTemplateDefinitions;
+  const template = definitions.find((t) => t.name === templateName);
   if (!template) return [];
   const scoreDetails = getTemplateScoreDetails(template, settings);
 

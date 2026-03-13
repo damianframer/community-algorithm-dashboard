@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
 import type { PositionChange } from "@/features/marketplace/lib/position-change";
@@ -207,8 +207,8 @@ function FilterSelect<T extends string>({
 
 function getTemplatePreviewStyle(template: RankedTemplate) {
   return {
-    "--template-preview-base": template.previewBase,
-    "--template-preview-glow": template.previewGlow,
+    "--template-preview-base": template.previewBase || "none",
+    "--template-preview-glow": template.previewGlow || "none",
     "--template-preview-image": template.thumbnailUrl
       ? `url("${template.thumbnailUrl}")`
       : "none",
@@ -396,6 +396,8 @@ function TemplateDetailView({
   );
 }
 
+const PAGE_SIZE = 48;
+
 export function TemplatesContent({
   getTemplateHref,
   onPricingFilterChange,
@@ -416,20 +418,33 @@ export function TemplatesContent({
       : allRankedTemplates.filter(
           (template) => template.pricingType === pricingFilter,
         );
-  const visibleTemplates = deferredSearchQuery.trim()
-    ? rankedTemplates
-        .map((template) => ({
-          searchScore: getTemplateMatchScore(template, deferredSearchQuery),
-          template,
-        }))
-        .filter(({ searchScore }) => searchScore > 0)
-        .sort(
-          (left, right) =>
-            right.searchScore - left.searchScore ||
-            right.template.finalScore - left.template.finalScore,
-        )
-        .map(({ template }) => template)
-    : interleaveByPricing(applyFeedRules(rankedTemplates, rankingSettings));
+  const visibleTemplates = useMemo(() =>
+    deferredSearchQuery.trim()
+      ? rankedTemplates
+          .map((template) => ({
+            searchScore: getTemplateMatchScore(template, deferredSearchQuery),
+            template,
+          }))
+          .filter(({ searchScore }) => searchScore > 0)
+          .sort(
+            (left, right) =>
+              right.searchScore - left.searchScore ||
+              right.template.finalScore - left.template.finalScore,
+          )
+          .map(({ template }) => template)
+      : interleaveByPricing(applyFeedRules(rankedTemplates, rankingSettings)),
+    [deferredSearchQuery, rankedTemplates, rankingSettings],
+  );
+  const [pageCount, setPageCount] = useState(1);
+
+  // Reset pagination when filters or search change
+  useEffect(() => {
+    setPageCount(1);
+  }, [deferredSearchQuery, pricingFilter]);
+
+  const displayedTemplates = visibleTemplates.slice(0, pageCount * PAGE_SIZE);
+  const hasMore = displayedTemplates.length < visibleTemplates.length;
+  const loadMore = useCallback(() => setPageCount((c) => c + 1), []);
   const visibleStats = statsFilter === "none" ? null : statsFilter;
 
   if (selectedTemplate) {
@@ -449,7 +464,7 @@ export function TemplatesContent({
           <div className="contentTop">
             <div className="contentTitleWrap">
               <h1 className="contentTitle">Templates</h1>
-              <span className="contentCount">{visibleTemplates.length}</span>
+              <span className="contentCount">{visibleTemplates.length} of {rankedTemplates.length}</span>
             </div>
 
             <div className="contentFilters" aria-label="Template filters">
@@ -469,7 +484,7 @@ export function TemplatesContent({
           </div>
 
           <div className="templateGrid">
-            {visibleTemplates.map((template) => {
+            {displayedTemplates.map((template) => {
               const stats = visibleStats ? template.stats[visibleStats] : null;
 
               return (
@@ -519,6 +534,11 @@ export function TemplatesContent({
               );
             })}
           </div>
+          {hasMore ? (
+            <button className="loadMoreButton" onClick={loadMore}>
+              Load more ({visibleTemplates.length - displayedTemplates.length} remaining)
+            </button>
+          ) : null}
           {visibleTemplates.length === 0 ? (
             <p className="templateEmptyState">
               No templates match the current search and filters.
