@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { useCallback, useEffect, useRef, useState } from "react";
 
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import {
   formatScore,
   type RankedTemplate,
@@ -30,11 +31,13 @@ export function TemplateListSidebar({
 
   const normalizedQuery = searchQuery.trim().toLowerCase();
   const filteredTemplates = normalizedQuery
-    ? templates.filter(
-        (t) =>
-          t.name.toLowerCase().includes(normalizedQuery) ||
-          t.creator.toLowerCase().includes(normalizedQuery) ||
-          t.category.toLowerCase().includes(normalizedQuery),
+    ? interleaveByPricing(
+        templates.filter(
+          (t) =>
+            t.name.toLowerCase().includes(normalizedQuery) ||
+            t.creator.toLowerCase().includes(normalizedQuery) ||
+            t.category.toLowerCase().includes(normalizedQuery),
+        ),
       )
     : templates;
   const visibleTemplates = filteredTemplates.slice(0, visibleCount);

@@ -4,6 +4,7 @@ import { useDeferredValue } from "react";
 
 import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
 import type { PositionChange } from "@/features/marketplace/lib/position-change";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { formatScore } from "@/features/templates/lib/template-ranking";
 
 import type { RankedVector } from "@/features/vectors/lib/vector-ranking";
@@ -47,7 +48,8 @@ export function VectorsContent({
 }: VectorsContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visibleVectors = deferredSearchQuery.trim()
-    ? allVectors
+    ? interleaveByPricing(
+        allVectors
         .map((vector) => ({
           vector,
           searchScore: getVectorMatchScore(vector, deferredSearchQuery),
@@ -58,7 +60,8 @@ export function VectorsContent({
             right.searchScore - left.searchScore ||
             right.vector.finalScore - left.vector.finalScore,
         )
-        .map(({ vector }) => vector)
+        .map(({ vector }) => vector),
+      )
     : allVectors;
 
   return (

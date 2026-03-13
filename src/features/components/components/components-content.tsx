@@ -4,6 +4,7 @@ import { useDeferredValue } from "react";
 
 import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
 import type { PositionChange } from "@/features/marketplace/lib/position-change";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { formatScore } from "@/features/templates/lib/template-ranking";
 
 import type { RankedComponent } from "@/features/components/lib/component-ranking";
@@ -47,7 +48,8 @@ export function ComponentsContent({
 }: ComponentsContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visibleComponents = deferredSearchQuery.trim()
-    ? allComponents
+    ? interleaveByPricing(
+        allComponents
         .map((component) => ({
           component,
           searchScore: getComponentMatchScore(component, deferredSearchQuery),
@@ -58,7 +60,8 @@ export function ComponentsContent({
             right.searchScore - left.searchScore ||
             right.component.finalScore - left.component.finalScore,
         )
-        .map(({ component }) => component)
+        .map(({ component }) => component),
+      )
     : allComponents;
 
   return (
