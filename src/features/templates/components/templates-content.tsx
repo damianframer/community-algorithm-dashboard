@@ -417,8 +417,7 @@ export function TemplatesContent({
           (template) => template.pricingType === pricingFilter,
         );
   const visibleTemplates = deferredSearchQuery.trim()
-    ? interleaveByPricing(
-        rankedTemplates
+    ? rankedTemplates
         .map((template) => ({
           searchScore: getTemplateMatchScore(template, deferredSearchQuery),
           template,
@@ -429,8 +428,7 @@ export function TemplatesContent({
             right.searchScore - left.searchScore ||
             right.template.finalScore - left.template.finalScore,
         )
-        .map(({ template }) => template),
-      )
+        .map(({ template }) => template)
     : interleaveByPricing(applyFeedRules(rankedTemplates, rankingSettings));
   const visibleStats = statsFilter === "none" ? null : statsFilter;
 

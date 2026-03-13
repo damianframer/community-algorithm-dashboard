@@ -4,7 +4,6 @@ import { useDeferredValue } from "react";
 
 import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
 import type { PositionChange } from "@/features/marketplace/lib/position-change";
-import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { formatScore } from "@/features/templates/lib/template-ranking";
 
 import type { RankedPlugin } from "@/features/plugins/lib/plugin-ranking";
@@ -48,8 +47,7 @@ export function PluginsContent({
 }: PluginsContentProps) {
   const deferredSearchQuery = useDeferredValue(searchQuery);
   const visiblePlugins = deferredSearchQuery.trim()
-    ? interleaveByPricing(
-        allPlugins
+    ? allPlugins
         .map((plugin) => ({
           plugin,
           searchScore: getPluginMatchScore(plugin, deferredSearchQuery),
@@ -60,8 +58,7 @@ export function PluginsContent({
             right.searchScore - left.searchScore ||
             right.plugin.finalScore - left.plugin.finalScore,
         )
-        .map(({ plugin }) => plugin),
-      )
+        .map(({ plugin }) => plugin)
     : allPlugins;
 
   return (
