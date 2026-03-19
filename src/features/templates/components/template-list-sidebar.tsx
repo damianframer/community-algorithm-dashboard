@@ -6,6 +6,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import {
   formatScore,
+  getTemplateDisplayScore,
   type RankedTemplate,
 } from "@/features/templates/lib/template-ranking";
 
@@ -99,7 +100,7 @@ export function TemplateListSidebar({
                   {template.pricingLabel}
                 </span>
                 <span className="templateBadge">
-                  {formatScore(template.finalScore)} Score
+                  {formatScore(getTemplateDisplayScore(template))} Score
                 </span>
               </div>
             </Link>

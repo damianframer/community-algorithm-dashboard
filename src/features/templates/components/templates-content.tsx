@@ -1,19 +1,21 @@
 "use client";
 
 import Link from "next/link";
-import { useDeferredValue, useEffect, useState, type CSSProperties } from "react";
+import { useCallback, useDeferredValue, useEffect, useMemo, useState, type CSSProperties } from "react";
 
 import { PositionChangeBadge } from "@/features/marketplace/components/position-change-badge";
 import type { PositionChange } from "@/features/marketplace/lib/position-change";
-import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import {
-  applyFeedRules,
   formatMetricValue,
   formatScore,
   getScoreBreakdown,
+  getTemplateDisplayScore,
+  getTemplatesForDisplay,
+  MAX_TEMPLATE_DISPLAY_COUNT,
   type RankedTemplate,
   type RankedTemplateStats,
   type RankingSettings,
+  type TemplateSeed,
 } from "@/features/templates/lib/template-ranking";
 
 type FilterOption<T extends string> = {
@@ -54,7 +56,6 @@ const templateDetailStatsLabels: {
   { label: "Previews", key: "previews" },
   { label: "Remixes", key: "remixes" },
   { label: "Conversions", key: "conversions" },
-  { label: "Revenue", key: "revenue" },
 ];
 
 type DetailStatsFilterValue = "week" | "month";
@@ -72,6 +73,7 @@ type TemplatesContentProps = {
   positionChanges: ReadonlyMap<string, PositionChange>;
   rankedTemplates: RankedTemplate[];
   rankingSettings: RankingSettings;
+  scoreBreakdownSeeds?: TemplateSeed[];
   selectedTemplate: RankedTemplate | null;
   showPositionChanges: boolean;
   onPricingFilterChange: (value: TemplatePricingFilterValue) => void;
@@ -207,8 +209,8 @@ function FilterSelect<T extends string>({
 
 function getTemplatePreviewStyle(template: RankedTemplate) {
   return {
-    "--template-preview-base": template.previewBase,
-    "--template-preview-glow": template.previewGlow,
+    "--template-preview-base": template.previewBase || "none",
+    "--template-preview-glow": template.previewGlow || "none",
     "--template-preview-image": template.thumbnailUrl
       ? `url("${template.thumbnailUrl}")`
       : "none",
@@ -225,6 +227,30 @@ function formatDateFromBaseDate(baseDate: Date, dayOffset: number) {
 }
 
 type DetailStatRow = { label: string; value: string };
+type TemplateDataRow = {
+  label: string;
+  source: string;
+  usedBy: string;
+  value: string;
+};
+
+function formatDataValue(value: boolean | number | string | null | undefined) {
+  if (value === null || value === undefined) {
+    return "Not available";
+  }
+
+  if (typeof value === "boolean") {
+    return value ? "Yes" : "No";
+  }
+
+  if (typeof value === "number") {
+    return Number.isInteger(value)
+      ? formatMetricValue(value)
+      : value.toFixed(2);
+  }
+
+  return value;
+}
 
 function getDetailRows(
   template: RankedTemplate,
@@ -274,12 +300,188 @@ function getDetailRows(
   ];
 }
 
-type DetailTab = "statistics" | "score-breakdown";
+function getTemplateDataRows(
+  template: RankedTemplate,
+  templateSeed?: TemplateSeed | null,
+): TemplateDataRow[] {
+  const quarter = templateSeed?.quarter;
+
+  return [
+    {
+      label: "Title",
+      value: template.name,
+      usedBy: "Template identity and detail page slug",
+      source: "template_stats.title",
+    },
+    {
+      label: "Creator",
+      value: template.creator,
+      usedBy: "Creator cap and search",
+      source: "template_stats.creator",
+    },
+    {
+      label: "Category",
+      value: template.category,
+      usedBy: "Category cap and search",
+      source: "templates.categories[0]",
+    },
+    {
+      label: "Price",
+      value: template.pricingLabel,
+      usedBy: "Pricing split and revenue-per-conversion",
+      source: "template_stats.price",
+    },
+    {
+      label: "Age (days)",
+      value: formatDataValue(template.ageDays),
+      usedBy: "Fresh boost and age priority",
+      source: "DATE_DIFF(CURRENT_DATE(), template_stats.published_date, DAY)",
+    },
+    {
+      label: "7d Views",
+      value: formatDataValue(templateSeed?.week[0] ?? template.stats.week.views),
+      usedBy: "Views weight and recency scoring",
+      source: "template_stats.views_l7",
+    },
+    {
+      label: "30d Views",
+      value: formatDataValue(templateSeed?.month[0] ?? template.stats.month.views),
+      usedBy: "Views weight and recency scoring",
+      source: "template_stats.views_l30",
+    },
+    {
+      label: "90d Views",
+      value: formatDataValue(quarter?.[0]),
+      usedBy: "90d lookback and lifetime blend",
+      source: "template_stats.views_l90",
+    },
+    {
+      label: "7d Previews",
+      value: formatDataValue(templateSeed?.week[1] ?? template.stats.week.previews),
+      usedBy: "Preview weight, preview rate, CTR threshold",
+      source: "template_stats.visitors_l7",
+    },
+    {
+      label: "30d Previews",
+      value: formatDataValue(templateSeed?.month[1] ?? template.stats.month.previews),
+      usedBy: "Preview weight, preview rate, CTR threshold",
+      source: "template_stats.visitors_l30",
+    },
+    {
+      label: "90d Previews",
+      value: formatDataValue(quarter?.[1]),
+      usedBy: "90d lookback and lifetime blend",
+      source: "template_stats.visitors_l90",
+    },
+    {
+      label: "7d Remixes",
+      value: formatDataValue(templateSeed?.week[2] ?? template.stats.week.remixes),
+      usedBy: "Remix weight and remix rate",
+      source: "template_stats.remixes_l7",
+    },
+    {
+      label: "30d Remixes",
+      value: formatDataValue(templateSeed?.month[2] ?? template.stats.month.remixes),
+      usedBy: "Remix weight and remix rate",
+      source: "template_stats.remixes_l30",
+    },
+    {
+      label: "90d Remixes",
+      value: formatDataValue(quarter?.[2]),
+      usedBy: "90d lookback and lifetime blend",
+      source: "template_stats.remixes_l90",
+    },
+    {
+      label: "7d Conversions",
+      value: formatDataValue(templateSeed?.week[3] ?? template.stats.week.conversions),
+      usedBy: "Conversion, conversion rate, and revenue scoring",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "30d Conversions",
+      value: formatDataValue(templateSeed?.month[3] ?? template.stats.month.conversions),
+      usedBy: "Conversion, conversion rate, and revenue scoring",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "90d Conversions",
+      value: formatDataValue(quarter?.[3]),
+      usedBy: "90d lookback and lifetime blend",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "New User Rate",
+      value: formatDataValue(templateSeed?.newUserRate),
+      usedBy: "New User Activation boost",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Currently Trending",
+      value: formatDataValue(template.isCurrentlyTrending),
+      usedBy: "Trending rotation eligibility",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Days in Trending",
+      value: formatDataValue(template.daysInTrending),
+      usedBy: "Trending duration decay and max days",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Days Since Last Trending",
+      value: formatDataValue(templateSeed?.daysSinceLastTrending),
+      usedBy: "Trending cooldown",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Exploration Candidate",
+      value: formatDataValue(template.explorationCandidate),
+      usedBy: "Reserved feed slots",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Momentum Preview Growth",
+      value: formatDataValue(templateSeed?.momentum.previewGrowth),
+      usedBy: "Momentum weight and acceleration",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Momentum Remix Growth",
+      value: formatDataValue(templateSeed?.momentum.remixGrowth),
+      usedBy: "Momentum weight and acceleration",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Previous Preview Growth",
+      value: formatDataValue(templateSeed?.momentum.previousPreviewGrowth),
+      usedBy: "Acceleration baseline",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Previous Remix Growth",
+      value: formatDataValue(templateSeed?.momentum.previousRemixGrowth),
+      usedBy: "Acceleration baseline",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Admin Override",
+      value: template.adminOverride,
+      usedBy: "Admin boost/decay overrides",
+      source: "Not in BigQuery yet",
+    },
+  ];
+}
+
+type DetailTab = "statistics" | "score-breakdown" | "data";
 
 function TemplateDetailView({
+  scoreBreakdownSeeds,
+  templateSeed,
   template,
   rankingSettings,
 }: {
+  scoreBreakdownSeeds?: TemplateSeed[];
+  templateSeed?: TemplateSeed | null;
   template: RankedTemplate;
   rankingSettings: RankingSettings;
 }) {
@@ -288,7 +490,11 @@ function TemplateDetailView({
   const [activeTab, setActiveTab] = useState<DetailTab>("statistics");
   const [today, setToday] = useState<Date | null>(null);
   const stats = template.stats[detailStatsFilter];
-  const scoreBreakdown = getScoreBreakdown(template.name, rankingSettings);
+  const scoreBreakdown = getScoreBreakdown(
+    template.name,
+    rankingSettings,
+    scoreBreakdownSeeds,
+  );
   const templateLink = `www.${template.name.toLowerCase()}.framer.website`;
 
   useEffect(() => {
@@ -296,6 +502,7 @@ function TemplateDetailView({
   }, []);
 
   const detailRows = getDetailRows(template, rankingSettings, today);
+  const dataRows = getTemplateDataRows(template, templateSeed);
 
   return (
     <section className="contentPane">
@@ -326,11 +533,11 @@ function TemplateDetailView({
                 <span className="detailStatsName">{template.name}</span>
                 <div className="templateBadges">
                   <span className="templateBadge muted">{template.pricingLabel}</span>
-                  <span className="templateBadge">
-                    {formatScore(template.finalScore)} Score
-                  </span>
+                    <span className="templateBadge">
+                      {formatScore(getTemplateDisplayScore(template))} Score
+                    </span>
+                  </div>
                 </div>
-              </div>
               {templateDetailStatsLabels.map((stat) => (
                 <div key={stat.key} className="detailStatRow">
                   <span className="detailStatLabel">{stat.label}</span>
@@ -356,6 +563,12 @@ function TemplateDetailView({
               >
                 Score breakdown
               </button>
+              <button
+                className={activeTab === "data" ? "detailTab active" : "detailTab"}
+                onClick={() => setActiveTab("data")}
+              >
+                Data
+              </button>
               <button className="detailTab" disabled>Tables</button>
             </div>
             <div className="detailTabDivider" />
@@ -374,7 +587,7 @@ function TemplateDetailView({
                 </div>
               ))}
             </div>
-          ) : (
+          ) : activeTab === "score-breakdown" ? (
             <div className="detailTable threeCol">
               <div className="detailTableHeader">
                 <span className="detailTableHeaderCell">Component</span>
@@ -389,12 +602,31 @@ function TemplateDetailView({
                 </div>
               ))}
             </div>
+          ) : (
+            <div className="detailTable">
+              <div className="detailTableHeader">
+                <span className="detailTableHeaderCell">Data Point</span>
+                <span className="detailTableHeaderCell">Value</span>
+                <span className="detailTableHeaderCell">Used By</span>
+                <span className="detailTableHeaderCell">BigQuery Source</span>
+              </div>
+              {dataRows.map((row) => (
+                <div key={row.label} className="detailTableRow">
+                  <span className="detailTableCell">{row.label}</span>
+                  <span className="detailTableCell">{row.value}</span>
+                  <span className="detailTableCell">{row.usedBy}</span>
+                  <span className="detailTableCell">{row.source}</span>
+                </div>
+              ))}
+            </div>
           )}
         </div>
       </div>
     </section>
   );
 }
+
+const PAGE_SIZE = 48;
 
 export function TemplatesContent({
   getTemplateHref,
@@ -404,6 +636,7 @@ export function TemplatesContent({
   positionChanges,
   rankedTemplates: allRankedTemplates,
   rankingSettings,
+  scoreBreakdownSeeds,
   searchQuery,
   selectedTemplate,
   showPositionChanges,
@@ -416,26 +649,46 @@ export function TemplatesContent({
       : allRankedTemplates.filter(
           (template) => template.pricingType === pricingFilter,
         );
-  const visibleTemplates = deferredSearchQuery.trim()
-    ? rankedTemplates
-        .map((template) => ({
-          searchScore: getTemplateMatchScore(template, deferredSearchQuery),
-          template,
-        }))
-        .filter(({ searchScore }) => searchScore > 0)
-        .sort(
-          (left, right) =>
-            right.searchScore - left.searchScore ||
-            right.template.finalScore - left.template.finalScore,
-        )
-        .map(({ template }) => template)
-    : interleaveByPricing(applyFeedRules(rankedTemplates, rankingSettings));
+  const visibleTemplates = useMemo(() =>
+    deferredSearchQuery.trim()
+      ? rankedTemplates
+          .map((template) => ({
+            searchScore: getTemplateMatchScore(template, deferredSearchQuery),
+            template,
+          }))
+          .filter(({ searchScore }) => searchScore > 0)
+          .sort(
+            (left, right) =>
+              right.searchScore - left.searchScore ||
+              getTemplateDisplayScore(right.template) -
+                getTemplateDisplayScore(left.template),
+          )
+          .map(({ template }) => template)
+          .slice(0, MAX_TEMPLATE_DISPLAY_COUNT)
+      : getTemplatesForDisplay(rankedTemplates, rankingSettings),
+    [deferredSearchQuery, rankedTemplates, rankingSettings],
+  );
+  const [pageCount, setPageCount] = useState(1);
+
+  // Reset pagination when filters or search change
+  useEffect(() => {
+    setPageCount(1);
+  }, [deferredSearchQuery, pricingFilter]);
+
+  const displayedTemplates = visibleTemplates.slice(0, pageCount * PAGE_SIZE);
+  const hasMore = displayedTemplates.length < visibleTemplates.length;
+  const loadMore = useCallback(() => setPageCount((c) => c + 1), []);
   const visibleStats = statsFilter === "none" ? null : statsFilter;
 
   if (selectedTemplate) {
     const freshTemplate = rankedTemplates.find((t) => t.name === selectedTemplate.name);
+    const templateSeed = scoreBreakdownSeeds?.find(
+      (seed) => seed.name === selectedTemplate.name,
+    );
     return (
       <TemplateDetailView
+        scoreBreakdownSeeds={scoreBreakdownSeeds}
+        templateSeed={templateSeed}
         template={freshTemplate ?? selectedTemplate}
         rankingSettings={rankingSettings}
       />
@@ -449,7 +702,7 @@ export function TemplatesContent({
           <div className="contentTop">
             <div className="contentTitleWrap">
               <h1 className="contentTitle">Templates</h1>
-              <span className="contentCount">{visibleTemplates.length}</span>
+              <span className="contentCount">{visibleTemplates.length} of {rankedTemplates.length}</span>
             </div>
 
             <div className="contentFilters" aria-label="Template filters">
@@ -469,7 +722,7 @@ export function TemplatesContent({
           </div>
 
           <div className="templateGrid">
-            {visibleTemplates.map((template) => {
+            {displayedTemplates.map((template) => {
               const stats = visibleStats ? template.stats[visibleStats] : null;
 
               return (
@@ -500,7 +753,7 @@ export function TemplatesContent({
                     <div className="templateBadges">
                       <span className="templateBadge muted">{template.pricingLabel}</span>
                       <span className="templateBadge">
-                        {formatScore(template.finalScore)} Score
+                        {formatScore(getTemplateDisplayScore(template))} Score
                       </span>
                     </div>
                   </div>
@@ -519,6 +772,11 @@ export function TemplatesContent({
               );
             })}
           </div>
+          {hasMore ? (
+            <button className="loadMoreButton" onClick={loadMore}>
+              Load more ({visibleTemplates.length - displayedTemplates.length} remaining)
+            </button>
+          ) : null}
           {visibleTemplates.length === 0 ? (
             <p className="templateEmptyState">
               No templates match the current search and filters.

@@ -1,17 +1,9 @@
 import { notFound } from "next/navigation";
 
 import { Topbar } from "@/features/marketplace/components/topbar";
-import {
-  getAllTemplateSlugs,
-  hasTemplateSlug,
-} from "@/features/templates/lib/template-ranking";
+import { getTemplateSlug } from "@/features/templates/lib/template-paths";
+import { fetchTemplateSeeds } from "@/features/templates/lib/template-seeds.server";
 import { TemplatesWorkspace } from "@/features/templates/templates-workspace";
-
-export const dynamicParams = false;
-
-export function generateStaticParams() {
-  return getAllTemplateSlugs().map((templateSlug) => ({ templateSlug }));
-}
 
 export default async function TemplateDetailPage({
   params,
@@ -19,15 +11,22 @@ export default async function TemplateDetailPage({
   params: Promise<{ templateSlug: string }>;
 }) {
   const { templateSlug } = await params;
+  const seeds = await fetchTemplateSeeds();
+  const hasMatchingTemplate = seeds.some(
+    (template) => getTemplateSlug(template.name) === templateSlug,
+  );
 
-  if (!hasTemplateSlug(templateSlug)) {
+  if (!hasMatchingTemplate) {
     notFound();
   }
 
   return (
     <div className="appShell">
       <Topbar activeCategory="Templates" />
-      <TemplatesWorkspace selectedTemplateSlug={templateSlug} />
+      <TemplatesWorkspace
+        initialSeeds={seeds}
+        selectedTemplateSlug={templateSlug}
+      />
     </div>
   );
 }

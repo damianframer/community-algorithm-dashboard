@@ -451,6 +451,25 @@ button {
   line-height: 1.5;
 }
 
+.loadMoreButton {
+  display: block;
+  width: 100%;
+  margin: 16px 0 0;
+  padding: 10px 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.04);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.loadMoreButton:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .searchWrap {
   display: flex;
   flex-direction: column;
