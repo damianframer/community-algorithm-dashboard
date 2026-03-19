@@ -3,6 +3,7 @@ import type {
   NumericFieldState,
   SidebarSettingsState,
 } from "@/features/settings/lib/settings-state";
+import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { getTemplateSlug } from "@/features/templates/lib/template-paths";
 
 export type TemplatePricingType = "free" | "paid";
@@ -65,6 +66,7 @@ export type RankedTemplate = {
   isFeedEligible: boolean;
   explorationCandidate: boolean;
   finalScore: number;
+  rankingScore: number;
   name: string;
   previewBase: string;
   previewGlow: string;
@@ -74,8 +76,13 @@ export type RankedTemplate = {
   stats: Record<StatsRange, RankedTemplateStats>;
 };
 
+export const MAX_TEMPLATE_DISPLAY_COUNT = 400;
+
 export type RankingSettings = {
   accelerationWeight: number;
+  agePriorityBoost: number;
+  agePriorityReservedShare: number;
+  agePriorityWindowDays: number;
   categoryCap: number;
   cooldown: number;
   conversionRateWeight: number;
@@ -83,7 +90,6 @@ export type RankingSettings = {
   creatorCap: number;
   ctrThreshold: number;
   durationDecay: number;
-  explorationPercent: number;
   freshBoostDuration: number;
   freshTemplateBoost: number;
   lifetimeWeight: number;
@@ -111,7 +117,6 @@ export type RankingSettings = {
 };
 
 type TemplateDefinition = Omit<TemplateSeed, "month" | "quarter" | "week"> & {
-  lifetime: RankingMetricSet;
   month: RankingMetricSet;
   quarter: RankingMetricSet;
   thumbnailUrl?: string;
@@ -683,37 +688,25 @@ function scaleMetricSet(metrics: RankingMetricSet, multiplier: number): RankingM
   };
 }
 
-function blendMetricSets(
-  source: RankingMetricSet,
-  target: RankingMetricSet,
-  progress: number,
-): RankingMetricSet {
-  return {
-    views: roundMetricValue(source.views + (target.views - source.views) * progress),
-    previews: roundMetricValue(source.previews + (target.previews - source.previews) * progress),
-    remixes: roundMetricValue(source.remixes + (target.remixes - source.remixes) * progress),
-    conversions: roundMetricValue(source.conversions + (target.conversions - source.conversions) * progress),
-    revenue: roundMetricValue(source.revenue + (target.revenue - source.revenue) * progress),
-    newUserActivations: roundMetricValue(
-      source.newUserActivations + (target.newUserActivations - source.newUserActivations) * progress,
-    ),
-  };
+function buildLifetimeMetrics(
+  template: Pick<TemplateDefinition, "quarter">,
+) {
+  return template.quarter;
 }
 
-function capMetricSet(metrics: RankingMetricSet, maxMetrics: RankingMetricSet): RankingMetricSet {
-  return {
-    views: Math.min(metrics.views, maxMetrics.views),
-    previews: Math.min(metrics.previews, maxMetrics.previews),
-    remixes: Math.min(metrics.remixes, maxMetrics.remixes),
-    conversions: Math.min(metrics.conversions, maxMetrics.conversions),
-    revenue: Math.min(metrics.revenue, maxMetrics.revenue),
-    newUserActivations: Math.min(metrics.newUserActivations, maxMetrics.newUserActivations),
-  };
-}
+function getAgePriorityMultiplier(
+  ageDays: number,
+  settings: Pick<RankingSettings, "agePriorityBoost" | "agePriorityWindowDays">,
+) {
+  if (
+    settings.agePriorityWindowDays <= 0 ||
+    settings.agePriorityBoost <= 0 ||
+    ageDays > settings.agePriorityWindowDays
+  ) {
+    return 1;
+  }
 
-function buildLifetimeMetrics(monthMetrics: RankingMetricSet, ageDays: number) {
-  const lifetimeMultiplier = Math.max(1.25, ageDays / 20);
-  return scaleMetricSet(monthMetrics, lifetimeMultiplier);
+  return 1 + settings.agePriorityBoost / 100;
 }
 
 function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string): TemplateDefinition {
@@ -729,7 +722,6 @@ function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string)
     week,
     month,
     quarter,
-    lifetime: buildLifetimeMetrics(month, seed.ageDays),
   };
 }
 
@@ -761,6 +753,21 @@ function getDropdownSettingValue(
 
 export function getRankingSettings(settings: SidebarSettingsState): RankingSettings {
   return {
+    agePriorityWindowDays: getNumericSettingValue(
+      settings,
+      "Age Priority",
+      "Prefer templates newer than",
+    ),
+    agePriorityBoost: getNumericSettingValue(
+      settings,
+      "Age Priority",
+      "Boost strength",
+    ),
+    agePriorityReservedShare: getNumericSettingValue(
+      settings,
+      "Age Priority",
+      "Reserved share",
+    ),
     viewsWeight: getNumericSettingValue(settings, "Weight Metrics", "Views"),
     previewsWeight: getNumericSettingValue(settings, "Weight Metrics", "Previews"),
     remixesWeight: getNumericSettingValue(settings, "Weight Metrics", "Remixes"),
@@ -789,7 +796,6 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
     maxDays: getNumericSettingValue(settings, "Trending Rotation", "Max Days"),
     cooldown: getNumericSettingValue(settings, "Trending Rotation", "Cooldown"),
     ctrThreshold: getNumericSettingValue(settings, "Trending Rotation", "CTR Threshold"),
-    explorationPercent: getNumericSettingValue(settings, "Exploration", "Exploration"),
     creatorCap: getNumericSettingValue(settings, "Diversity", "Creator Cap"),
     categoryCap: getNumericSettingValue(settings, "Diversity", "Category Cap"),
     overrideBoost: getNumericSettingValue(settings, "Overrides", "Boost"),
@@ -936,6 +942,7 @@ type TemplateScoreDetails = {
   componentRows: ScoreComponent[];
   finalScore: number;
   isFeedEligible: boolean;
+  rankingScore: number;
 };
 
 function getFeedIneligibilityLabel(
@@ -972,7 +979,8 @@ function getTemplateScoreDetails(
   settings: RankingSettings,
 ): TemplateScoreDetails {
   const recentMetrics = resolveRecentMetrics(template, settings.lookbackWindow);
-  const lifetimeMetrics = template.lifetime;
+  const lifetimeMetrics = buildLifetimeMetrics(template);
+  const agePriorityMultiplier = getAgePriorityMultiplier(template.ageDays, settings);
   const adjusted = getAdjustedMetrics(recentMetrics, template, settings);
   const lifetimeAdjusted = getAdjustedMetrics(lifetimeMetrics, template, settings);
   const rw = settings.recencyWeight / 100;
@@ -1007,25 +1015,28 @@ function getTemplateScoreDetails(
     settings.previewRateWeight * lifetimePreviewRate,
   );
 
-  const remixRate = adjusted.remixes / Math.max(recentMetrics.previews, 1);
+  // Paid normalization should boost the absolute paid signals without
+  // distorting denominator-based efficiency/rate metrics.
+  const remixRate = recentMetrics.remixes / Math.max(recentMetrics.previews, 1);
   const lifetimeRemixRate =
-    lifetimeAdjusted.remixes / Math.max(lifetimeMetrics.previews, 1);
+    lifetimeMetrics.remixes / Math.max(lifetimeMetrics.previews, 1);
   const remixRateScore = blend(
     settings.remixRateWeight * remixRate,
     settings.remixRateWeight * lifetimeRemixRate,
   );
 
-  const conversionRate = adjusted.conversions / Math.max(adjusted.remixes, 1);
+  const conversionRate =
+    recentMetrics.conversions / Math.max(recentMetrics.remixes, 1);
   const lifetimeConversionRate =
-    lifetimeAdjusted.conversions / Math.max(lifetimeAdjusted.remixes, 1);
+    lifetimeMetrics.conversions / Math.max(lifetimeMetrics.remixes, 1);
   const conversionRateScore = blend(
     settings.conversionRateWeight * conversionRate,
     settings.conversionRateWeight * lifetimeConversionRate,
   );
-
-  const revenueEfficiency = recentMetrics.revenue / Math.max(adjusted.remixes, 1);
+  const revenueEfficiency =
+    recentMetrics.revenue / Math.max(recentMetrics.remixes, 1);
   const lifetimeRevenueEfficiency =
-    lifetimeMetrics.revenue / Math.max(lifetimeAdjusted.remixes, 1);
+    lifetimeMetrics.revenue / Math.max(lifetimeMetrics.remixes, 1);
   const revenueEfficiencyScore = blend(
     settings.revenueEfficiencyWeight * revenueEfficiency,
     settings.revenueEfficiencyWeight * lifetimeRevenueEfficiency,
@@ -1069,6 +1080,15 @@ function getTemplateScoreDetails(
 
   let runningTotal = componentRows.reduce((total, row) => total + row.score, 0);
 
+  if (agePriorityMultiplier !== 1) {
+    const prioritizedTotal = runningTotal * agePriorityMultiplier;
+    componentRows.push({
+      label: "Age Priority",
+      score: prioritizedTotal - runningTotal,
+    });
+    runningTotal = prioritizedTotal;
+  }
+
   if (overrideMultiplier !== 1) {
     const overrideLabel =
       template.adminOverride === "great" ? "Admin Boost" : "Admin Decay";
@@ -1079,6 +1099,8 @@ function getTemplateScoreDetails(
     });
     runningTotal = overrideTotal;
   }
+
+  const rankingScore = runningTotal;
 
   if (ineligibilityLabel) {
     if (runningTotal !== 0) {
@@ -1092,6 +1114,7 @@ function getTemplateScoreDetails(
       componentRows,
       finalScore: 0,
       isFeedEligible: false,
+      rankingScore,
     };
   }
 
@@ -1108,6 +1131,7 @@ function getTemplateScoreDetails(
     componentRows,
     finalScore: runningTotal,
     isFeedEligible: true,
+    rankingScore,
   };
 }
 
@@ -1127,6 +1151,7 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
         isFeedEligible: scoreDetails.isFeedEligible,
         explorationCandidate: template.explorationCandidate,
         finalScore: scoreDetails.finalScore,
+        rankingScore: scoreDetails.rankingScore,
         name: template.name,
         previewBase: template.previewBase,
         previewGlow: template.previewGlow,
@@ -1155,8 +1180,15 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
     })
     .sort(
       (left, right) =>
-        right.finalScore - left.finalScore || left.name.localeCompare(right.name),
+        getTemplateDisplayScore(right) - getTemplateDisplayScore(left) ||
+        left.name.localeCompare(right.name),
     );
+}
+
+export function getTemplateDisplayScore(
+  template: Pick<RankedTemplate, "finalScore" | "isFeedEligible" | "rankingScore">,
+) {
+  return template.isFeedEligible ? template.finalScore : template.rankingScore;
 }
 
 export function getAllTemplateSlugs() {
@@ -1239,23 +1271,28 @@ export function applyFeedRules(
   const categoryCounts = new Map<string, number>();
   const usedNames = new Set<string>();
   const selection: RankedTemplate[] = [];
-  const explorationPool = eligibleTemplates.filter((template) => template.explorationCandidate);
-  const explorationSlots = Math.min(
-    explorationPool.length,
-    Math.round(eligibleTemplates.length * (settings.explorationPercent / 100)),
+  const prioritizedPool = eligibleTemplates.filter(
+    (template) =>
+      template.explorationCandidate ||
+      (settings.agePriorityWindowDays > 0 &&
+        template.ageDays <= settings.agePriorityWindowDays),
   );
-  const explorationPositions = buildExplorationPositions(
+  const prioritizedSlots = Math.min(
+    prioritizedPool.length,
+    Math.round(eligibleTemplates.length * (settings.agePriorityReservedShare / 100)),
+  );
+  const prioritizedPositions = buildExplorationPositions(
     eligibleTemplates.length,
-    explorationSlots,
+    prioritizedSlots,
   );
 
   for (let position = 0; position < eligibleTemplates.length; position += 1) {
-    const preferredPool = explorationPositions.has(position)
-      ? explorationPool
+    const preferredPool = prioritizedPositions.has(position)
+      ? prioritizedPool
       : eligibleTemplates;
-    const fallbackPool = explorationPositions.has(position)
+    const fallbackPool = prioritizedPositions.has(position)
       ? eligibleTemplates
-      : explorationPool;
+      : prioritizedPool;
     const candidate =
       takeNextTemplate(
         preferredPool,
@@ -1286,6 +1323,25 @@ export function applyFeedRules(
   }
 
   return selection;
+}
+
+export function getTemplatesForDisplay(
+  rankedTemplates: RankedTemplate[],
+  settings: RankingSettings,
+  maxCount = MAX_TEMPLATE_DISPLAY_COUNT,
+) {
+  const sortedTemplates = rankedTemplates.toSorted(
+    (left, right) =>
+      getTemplateDisplayScore(right) - getTemplateDisplayScore(left) ||
+      left.name.localeCompare(right.name),
+  );
+  const feedTemplates = interleaveByPricing(applyFeedRules(sortedTemplates, settings));
+  const usedNames = new Set(feedTemplates.map((template) => template.name));
+  const remainingTemplates = interleaveByPricing(
+    sortedTemplates.filter((template) => !usedNames.has(template.name)),
+  );
+
+  return [...feedTemplates, ...remainingTemplates].slice(0, maxCount);
 }
 
 export type ScoreBreakdownRow = {

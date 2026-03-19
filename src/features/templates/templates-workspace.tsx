@@ -4,7 +4,6 @@ import { useEffect, useState } from "react";
 
 import { TemplateListSidebar } from "@/features/templates/components/template-list-sidebar";
 import { getPositionChanges } from "@/features/marketplace/lib/position-change";
-import { interleaveByPricing } from "@/features/marketplace/lib/pricing-order";
 import { areSidebarSettingsEqual } from "@/features/settings/lib/settings-state";
 import {
   TemplatesContent,
@@ -15,24 +14,30 @@ import {
   getTemplateSlug,
 } from "@/features/templates/lib/template-paths";
 import {
-  applyFeedRules,
   getRankingSettings,
+  getTemplatesForDisplay,
   scoreTemplates,
   type TemplateSeed,
 } from "@/features/templates/lib/template-ranking";
 import { useTemplatesWorkspaceState } from "@/features/templates/lib/templates-workspace-state";
 
 type TemplatesWorkspaceProps = {
+  initialSeeds?: TemplateSeed[];
   selectedTemplateSlug?: string;
 };
 
 export function TemplatesWorkspace({
+  initialSeeds,
   selectedTemplateSlug,
 }: TemplatesWorkspaceProps) {
-  const [seeds, setSeeds] = useState<TemplateSeed[] | null>(null);
+  const [seeds, setSeeds] = useState<TemplateSeed[] | null>(initialSeeds ?? null);
   const isLoading = seeds === null;
 
   useEffect(() => {
+    if (initialSeeds) {
+      return;
+    }
+
     fetch("/api/templates")
       .then((res) => {
         if (!res.ok) throw new Error("API error");
@@ -45,7 +50,7 @@ export function TemplatesWorkspace({
       .catch(() => {
         setSeeds([]);
       });
-  }, []);
+  }, [initialSeeds]);
 
   const {
     pricingFilter,
@@ -69,13 +74,12 @@ export function TemplatesWorkspace({
   );
   const rankedTemplates = isLoading ? [] : scoreTemplates(rankingSettings, seeds);
   const savedRankedTemplates = isLoading ? [] : scoreTemplates(savedRankingSettings, seeds);
-  const feedTemplates = interleaveByPricing(
-    applyFeedRules(rankedTemplates, rankingSettings),
+  const displayTemplates = getTemplatesForDisplay(rankedTemplates, rankingSettings);
+  const savedDisplayTemplates = getTemplatesForDisplay(
+    savedRankedTemplates,
+    savedRankingSettings,
   );
-  const savedFeedTemplates = interleaveByPricing(
-    applyFeedRules(savedRankedTemplates, savedRankingSettings),
-  );
-  const positionChanges = getPositionChanges(feedTemplates, savedFeedTemplates);
+  const positionChanges = getPositionChanges(displayTemplates, savedDisplayTemplates);
   const selectedTemplate = selectedTemplateSlug
     ? rankedTemplates.find(
         (template) => getTemplateSlug(template.name) === selectedTemplateSlug,
@@ -87,7 +91,7 @@ export function TemplatesWorkspace({
       {selectedTemplate ? (
         <TemplateListSidebar
           getTemplateHref={(template) => getTemplateHref(template.name)}
-          templates={feedTemplates}
+          templates={displayTemplates}
           selectedTemplateName={selectedTemplate.name}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
@@ -110,6 +114,7 @@ export function TemplatesWorkspace({
         statsFilter={statsFilter}
         rankedTemplates={rankedTemplates}
         rankingSettings={rankingSettings}
+        scoreBreakdownSeeds={seeds ?? undefined}
         positionChanges={positionChanges}
         showPositionChanges={isEditing}
         selectedTemplate={selectedTemplate}
