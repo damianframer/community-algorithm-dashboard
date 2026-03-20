@@ -9,12 +9,26 @@ import { getTemplateSlug } from "@/features/templates/lib/template-paths";
 export type TemplatePricingType = "free" | "paid";
 export type TemplateOverride = "none" | "great" | "bad";
 export type StatsRange = "week" | "month";
+export type FeatureCountWindow = "30d" | "90d" | "lifetime";
+export type LifetimeMetricSource = "90d" | "all-time";
 export type LookbackWindow = "7 days" | "30 days" | "90 days";
 export type MomentumWindow = "3 days" | "7 days" | "14 days" | "30 days";
 
 type MetricTuple = [views: number, previews: number, remixes: number, conversions: number];
 
+type ActiveSitesByWindow = {
+  month: number;
+  quarter?: number;
+  week: number;
+};
+
+type LifetimeSeedMetrics = Pick<
+  RankingMetricSet,
+  "views" | "previews" | "remixes" | "activeSites" | "conversions"
+>;
+
 export type RankingMetricSet = {
+  activeSites: number;
   conversions: number;
   newUserActivations: number;
   previews: number;
@@ -23,7 +37,14 @@ export type RankingMetricSet = {
   views: number;
 };
 
+export type TrendingFeatureCounts = {
+  last30Days: number;
+  last90Days: number;
+  lifetime: number;
+};
+
 export type TemplateSeed = {
+  activeSites?: ActiveSitesByWindow;
   adminOverride: TemplateOverride;
   ageDays: number;
   category: string;
@@ -32,11 +53,12 @@ export type TemplateSeed = {
   daysSinceLastTrending: number | null;
   explorationCandidate: boolean;
   isCurrentlyTrending: boolean;
+  manualTrendingDays?: number;
   momentum: {
-    previousPreviewGrowth: number;
-    previousRemixGrowth: number;
-    previewGrowth: number;
-    remixGrowth: number;
+    previousPreviewGrowth: number | null;
+    previousRemixGrowth: number | null;
+    previewGrowth: number | null;
+    remixGrowth: number | null;
   };
   month: MetricTuple;
   name: string;
@@ -47,11 +69,16 @@ export type TemplateSeed = {
   quarter?: MetricTuple;
   revenuePerConversion: number;
   thumbnailUrl?: string;
+  trendingFeatureCounts?: TrendingFeatureCounts;
+  lifetime?: LifetimeSeedMetrics;
   week: MetricTuple;
   newUserRate: number;
 };
 
-export type RankedTemplateStats = Pick<RankingMetricSet, "views" | "previews" | "remixes" | "conversions"> & {
+export type RankedTemplateStats = Pick<
+  RankingMetricSet,
+  "views" | "previews" | "remixes" | "activeSites" | "conversions"
+> & {
   revenue: number;
   newUserActivations: number;
 };
@@ -62,11 +89,13 @@ export type RankedTemplate = {
   category: string;
   creator: string;
   daysInTrending: number;
+  feedIneligibilityLabel: string | null;
   isCurrentlyTrending: boolean;
   isFeedEligible: boolean;
   explorationCandidate: boolean;
   finalScore: number;
   rankingScore: number;
+  manualTrendingDays?: number;
   name: string;
   previewBase: string;
   previewGlow: string;
@@ -74,25 +103,33 @@ export type RankedTemplate = {
   pricingLabel: string;
   pricingType: TemplatePricingType;
   stats: Record<StatsRange, RankedTemplateStats>;
+  trendingFeatureCounts: TrendingFeatureCounts;
 };
 
 export const MAX_TEMPLATE_DISPLAY_COUNT = 400;
 
 export type RankingSettings = {
+  activeSiteRateWeight: number;
+  activeSitesWeight: number;
   accelerationWeight: number;
   agePriorityBoost: number;
   agePriorityReservedShare: number;
   agePriorityWindowDays: number;
   categoryCap: number;
   cooldown: number;
+  currentTrendingCount: number;
+  featureCountThreshold: number;
+  featureCountWindow: FeatureCountWindow;
   conversionRateWeight: number;
   conversionsWeight: number;
   creatorCap: number;
   ctrThreshold: number;
   durationDecay: number;
+  freshBoostMultiplier: number;
   freshBoostDuration: number;
   freshTemplateBoost: number;
   lifetimeWeight: number;
+  lifetimeSource: LifetimeMetricSource;
   lookbackWindow: LookbackWindow;
   maxDays: number;
   minPreviews: number;
@@ -111,15 +148,21 @@ export type RankingSettings = {
   recencyWeight: number;
   remixesWeight: number;
   remixRateWeight: number;
+  repeatFeatureDecay: number;
   revenueEfficiencyWeight: number;
   revenueWeight: number;
   viewsWeight: number;
 };
 
-type TemplateDefinition = Omit<TemplateSeed, "month" | "quarter" | "week"> & {
+type TemplateDefinition = Omit<
+  TemplateSeed,
+  "lifetime" | "month" | "quarter" | "trendingFeatureCounts" | "week"
+> & {
+  lifetime: RankingMetricSet;
   month: RankingMetricSet;
   quarter: RankingMetricSet;
   thumbnailUrl?: string;
+  trendingFeatureCounts: TrendingFeatureCounts;
   week: RankingMetricSet;
 };
 
@@ -666,8 +709,10 @@ function buildMetricSet(
   [views, previews, remixes, conversions]: MetricTuple,
   revenuePerConversion: number,
   newUserRate: number,
+  activeSites: number,
 ): RankingMetricSet {
   return {
+    activeSites,
     views,
     previews,
     remixes,
@@ -679,6 +724,7 @@ function buildMetricSet(
 
 function scaleMetricSet(metrics: RankingMetricSet, multiplier: number): RankingMetricSet {
   return {
+    activeSites: roundMetricValue(metrics.activeSites * multiplier),
     views: roundMetricValue(metrics.views * multiplier),
     previews: roundMetricValue(metrics.previews * multiplier),
     remixes: roundMetricValue(metrics.remixes * multiplier),
@@ -688,10 +734,93 @@ function scaleMetricSet(metrics: RankingMetricSet, multiplier: number): RankingM
   };
 }
 
+function buildLifetimeMetricSet(
+  metrics: LifetimeSeedMetrics,
+  revenuePerConversion: number,
+  newUserRate: number,
+): RankingMetricSet {
+  return {
+    activeSites: metrics.activeSites,
+    views: metrics.views,
+    previews: metrics.previews,
+    remixes: metrics.remixes,
+    conversions: metrics.conversions,
+    revenue: roundMetricValue(metrics.conversions * revenuePerConversion),
+    newUserActivations: roundMetricValue(metrics.remixes * newUserRate),
+  };
+}
+
+function deriveTrendingFeatureCounts(seed: TemplateSeed): TrendingFeatureCounts {
+  if (seed.trendingFeatureCounts) {
+    return seed.trendingFeatureCounts;
+  }
+
+  const lifetime = Math.max(
+    seed.isCurrentlyTrending ? 1 : 0,
+    roundMetricValue(
+      seed.ageDays / 45 +
+        seed.month[1] / 4000 +
+        seed.month[2] / 500 +
+        seed.daysInTrending * 0.6,
+    ),
+  );
+  const last90Days = Math.min(
+    lifetime,
+    Math.max(
+      seed.isCurrentlyTrending ? 1 : 0,
+      roundMetricValue(
+        lifetime *
+          Math.min(1, 90 / Math.max(seed.ageDays, 90)) *
+          (seed.explorationCandidate ? 1.1 : 1),
+      ),
+    ),
+  );
+  const last30Days = Math.min(
+    last90Days,
+    Math.max(
+      seed.isCurrentlyTrending ? 1 : 0,
+      roundMetricValue(last90Days * Math.min(1, 30 / Math.max(seed.ageDays, 30))),
+    ),
+  );
+
+  return {
+    last30Days,
+    last90Days,
+    lifetime,
+  };
+}
+
+function ensureCurrentTrendingFeatureCounts(seed: TemplateSeed) {
+  if (!seed.trendingFeatureCounts) {
+    return seed.trendingFeatureCounts;
+  }
+
+  return {
+    last30Days: Math.max(seed.trendingFeatureCounts.last30Days, 1),
+    last90Days: Math.max(seed.trendingFeatureCounts.last90Days, 1),
+    lifetime: Math.max(seed.trendingFeatureCounts.lifetime, 1),
+  };
+}
+
+function deriveActiveSites(seed: TemplateSeed): ActiveSitesByWindow {
+  if (seed.activeSites) {
+    return seed.activeSites;
+  }
+
+  return {
+    week: roundMetricValue(seed.week[2] * 0.45),
+    month: roundMetricValue(seed.month[2] * 0.42),
+    quarter: seed.quarter ? roundMetricValue(seed.quarter[2] * 0.4) : undefined,
+  };
+}
+
 function buildLifetimeMetrics(
-  template: Pick<TemplateDefinition, "quarter">,
+  template: Pick<TemplateDefinition, "lifetime" | "quarter">,
+  settings: Pick<RankingSettings, "lifetimeSource">,
 ) {
-  return template.quarter;
+  return settings.lifetimeSource === "all-time"
+    ? template.lifetime
+    : template.quarter;
 }
 
 function getAgePriorityMultiplier(
@@ -710,15 +839,45 @@ function getAgePriorityMultiplier(
 }
 
 function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string): TemplateDefinition {
-  const week = buildMetricSet(seed.week, seed.revenuePerConversion, seed.newUserRate);
-  const month = buildMetricSet(seed.month, seed.revenuePerConversion, seed.newUserRate);
+  const activeSites = deriveActiveSites(seed);
+  const week = buildMetricSet(
+    seed.week,
+    seed.revenuePerConversion,
+    seed.newUserRate,
+    activeSites.week,
+  );
+  const month = buildMetricSet(
+    seed.month,
+    seed.revenuePerConversion,
+    seed.newUserRate,
+    activeSites.month,
+  );
   const quarter = seed.quarter
-    ? buildMetricSet(seed.quarter, seed.revenuePerConversion, seed.newUserRate)
+    ? buildMetricSet(
+        seed.quarter,
+        seed.revenuePerConversion,
+        seed.newUserRate,
+        activeSites.quarter ?? roundMetricValue(activeSites.month * 2.75),
+      )
     : scaleMetricSet(month, 2.75);
+  const lifetime = seed.lifetime
+    ? buildLifetimeMetricSet(
+        seed.lifetime,
+        seed.revenuePerConversion,
+        seed.newUserRate,
+      )
+    : scaleMetricSet(
+        quarter,
+        Math.max(1, Math.min(6, seed.ageDays / 45 + 1)),
+      );
+  const trendingFeatureCounts = deriveTrendingFeatureCounts(seed);
 
   return {
     ...seed,
+    activeSites,
+    lifetime,
     thumbnailUrl: seed.thumbnailUrl ?? fallbackThumbnail,
+    trendingFeatureCounts,
     week,
     month,
     quarter,
@@ -753,6 +912,7 @@ function getDropdownSettingValue(
 
 export function getRankingSettings(settings: SidebarSettingsState): RankingSettings {
   return {
+    activeSitesWeight: getNumericSettingValue(settings, "Weight Metrics", "Active Sites"),
     agePriorityWindowDays: getNumericSettingValue(
       settings,
       "Age Priority",
@@ -771,6 +931,7 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
     viewsWeight: getNumericSettingValue(settings, "Weight Metrics", "Views"),
     previewsWeight: getNumericSettingValue(settings, "Weight Metrics", "Previews"),
     remixesWeight: getNumericSettingValue(settings, "Weight Metrics", "Remixes"),
+    activeSiteRateWeight: getNumericSettingValue(settings, "Rate Metrics", "Active Site Rate"),
     conversionsWeight: getNumericSettingValue(settings, "Weight Metrics", "Conversions"),
     revenueWeight: getNumericSettingValue(settings, "Weight Metrics", "Revenue"),
     previewRateWeight: getNumericSettingValue(settings, "Rate Metrics", "Preview Rate"),
@@ -783,7 +944,17 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
     lookbackWindow: getDropdownSettingValue(settings, "Time Window", "Lookback window") as LookbackWindow,
     recencyWeight: getNumericSettingValue(settings, "Time Window", "Recency weight"),
     lifetimeWeight: getNumericSettingValue(settings, "Time Window", "Lifetime weight"),
+    lifetimeSource: getDropdownSettingValue(
+      settings,
+      "Time Window",
+      "Lifetime source",
+    ) as LifetimeMetricSource,
     freshTemplateBoost: getNumericSettingValue(settings, "Time Window", "Fresh template boost"),
+    freshBoostMultiplier: getNumericSettingValue(
+      settings,
+      "Time Window",
+      "Fresh boost multiplier",
+    ),
     freshBoostDuration: getNumericSettingValue(settings, "Time Window", "Fresh boost duration"),
     minPreviews: getNumericSettingValue(settings, "Minimum Statistics", "Min. Previews"),
     minRemixes: getNumericSettingValue(settings, "Minimum Statistics", "Min. Remixes"),
@@ -792,15 +963,65 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
     momentumWindow: getDropdownSettingValue(settings, "Momentum", "Window") as MomentumWindow,
     momentumWeight: getNumericSettingValue(settings, "Momentum", "Weight"),
     accelerationWeight: getNumericSettingValue(settings, "Momentum", "Acceleration"),
+    currentTrendingCount: getNumericSettingValue(
+      settings,
+      "Trending Rotation",
+      "Trending slots",
+    ),
+    featureCountThreshold: getNumericSettingValue(
+      settings,
+      "Trending Rotation",
+      "Feature count threshold",
+    ),
+    featureCountWindow: getDropdownSettingValue(
+      settings,
+      "Trending Rotation",
+      "Feature count window",
+    ) as FeatureCountWindow,
     durationDecay: getNumericSettingValue(settings, "Trending Rotation", "Duration decay"),
     maxDays: getNumericSettingValue(settings, "Trending Rotation", "Max Days"),
     cooldown: getNumericSettingValue(settings, "Trending Rotation", "Cooldown"),
     ctrThreshold: getNumericSettingValue(settings, "Trending Rotation", "CTR Threshold"),
+    repeatFeatureDecay: getNumericSettingValue(
+      settings,
+      "Trending Rotation",
+      "Repeat feature decay",
+    ),
     creatorCap: getNumericSettingValue(settings, "Diversity", "Creator Cap"),
     categoryCap: getNumericSettingValue(settings, "Diversity", "Category Cap"),
     overrideBoost: getNumericSettingValue(settings, "Overrides", "Boost"),
     overrideDecay: getNumericSettingValue(settings, "Overrides", "Decay"),
   };
+}
+
+function getTrendingFeatureCount(
+  template: Pick<TemplateDefinition, "trendingFeatureCounts">,
+  window: FeatureCountWindow,
+) {
+  switch (window) {
+    case "30d":
+      return template.trendingFeatureCounts.last30Days;
+    case "90d":
+      return template.trendingFeatureCounts.last90Days;
+    case "lifetime":
+      return template.trendingFeatureCounts.lifetime;
+    default:
+      return template.trendingFeatureCounts.last90Days;
+  }
+}
+
+function getRepeatFeatureMultiplier(
+  template: Pick<TemplateDefinition, "trendingFeatureCounts">,
+  settings: RankingSettings,
+) {
+  const featuredCount = getTrendingFeatureCount(template, settings.featureCountWindow);
+  const extraAppearances = Math.max(0, featuredCount - settings.featureCountThreshold);
+
+  if (extraAppearances === 0) {
+    return 1;
+  }
+
+  return settings.repeatFeatureDecay ** extraAppearances;
 }
 
 function resolveRecentMetrics(
@@ -842,6 +1063,22 @@ function computeMomentumScore(
   template: TemplateDefinition,
   settings: RankingSettings,
 ) {
+  const {
+    previewGrowth: rawPreviewGrowth,
+    remixGrowth: rawRemixGrowth,
+    previousPreviewGrowth: rawPreviousPreviewGrowth,
+    previousRemixGrowth: rawPreviousRemixGrowth,
+  } = template.momentum;
+
+  if (
+    rawPreviewGrowth === null ||
+    rawRemixGrowth === null ||
+    rawPreviousPreviewGrowth === null ||
+    rawPreviousRemixGrowth === null
+  ) {
+    return 0;
+  }
+
   const windowFactor =
     settings.momentumWindow === "3 days"
       ? 1.2
@@ -851,14 +1088,10 @@ function computeMomentumScore(
           ? 0.82
           : 0.6;
 
-  const previewGrowth = clampGrowth(template.momentum.previewGrowth * windowFactor);
-  const remixGrowth = clampGrowth(template.momentum.remixGrowth * windowFactor);
-  const previousPreviewGrowth = clampGrowth(
-    template.momentum.previousPreviewGrowth * windowFactor,
-  );
-  const previousRemixGrowth = clampGrowth(
-    template.momentum.previousRemixGrowth * windowFactor,
-  );
+  const previewGrowth = clampGrowth(rawPreviewGrowth * windowFactor);
+  const remixGrowth = clampGrowth(rawRemixGrowth * windowFactor);
+  const previousPreviewGrowth = clampGrowth(rawPreviousPreviewGrowth * windowFactor);
+  const previousRemixGrowth = clampGrowth(rawPreviousRemixGrowth * windowFactor);
 
   const baseMomentumCurrent = 0.4 * previewGrowth + 0.6 * remixGrowth;
   const baseMomentumPrevious = 0.4 * previousPreviewGrowth + 0.6 * previousRemixGrowth;
@@ -867,6 +1100,16 @@ function computeMomentumScore(
   return (
     settings.momentumWeight * Math.max(0, baseMomentumCurrent) +
     settings.accelerationWeight * accelerationValue
+  );
+}
+
+function hasRecentActivity(metrics: RankingMetricSet) {
+  return (
+    metrics.views > 0 ||
+    metrics.previews > 0 ||
+    metrics.remixes > 0 ||
+    metrics.activeSites > 0 ||
+    metrics.conversions > 0
   );
 }
 
@@ -880,6 +1123,7 @@ function meetsTrendingMinimums(
   const minimumRemixes = isPaid ? settings.paidMinRemixes : settings.minRemixes;
 
   return (
+    hasRecentActivity(recentMetrics) &&
     recentMetrics.previews >= minimumPreviews &&
     recentMetrics.remixes >= minimumRemixes
   );
@@ -912,10 +1156,9 @@ function computeRotationMultiplier(
       ? 1
       : ctr / Math.max(settings.ctrThreshold, 0.0001);
 
-  return {
-    eligible: true,
-    value: durationMultiplier * ctrMultiplier,
-  };
+  const value = durationMultiplier * ctrMultiplier;
+
+  return { eligible: true, value };
 }
 
 function getOverrideMultiplier(
@@ -940,6 +1183,7 @@ type ScoreComponent = {
 
 type TemplateScoreDetails = {
   componentRows: ScoreComponent[];
+  feedIneligibilityLabel: string | null;
   finalScore: number;
   isFeedEligible: boolean;
   rankingScore: number;
@@ -949,13 +1193,13 @@ function getFeedIneligibilityLabel(
   template: TemplateDefinition,
   settings: RankingSettings,
   minimumsMet: boolean,
-  rotationEligible: boolean,
+  rotation: ReturnType<typeof computeRotationMultiplier>,
 ) {
   if (!minimumsMet) {
     return "Below Trending Minimums";
   }
 
-  if (!rotationEligible) {
+  if (!rotation.eligible) {
     if (template.isCurrentlyTrending && template.daysInTrending > settings.maxDays) {
       return "Exceeded Max Trending Days";
     }
@@ -979,7 +1223,7 @@ function getTemplateScoreDetails(
   settings: RankingSettings,
 ): TemplateScoreDetails {
   const recentMetrics = resolveRecentMetrics(template, settings.lookbackWindow);
-  const lifetimeMetrics = buildLifetimeMetrics(template);
+  const lifetimeMetrics = buildLifetimeMetrics(template, settings);
   const agePriorityMultiplier = getAgePriorityMultiplier(template.ageDays, settings);
   const adjusted = getAdjustedMetrics(recentMetrics, template, settings);
   const lifetimeAdjusted = getAdjustedMetrics(lifetimeMetrics, template, settings);
@@ -998,6 +1242,10 @@ function getTemplateScoreDetails(
   const remixesScore = blend(
     settings.remixesWeight * Math.log(adjusted.remixes + 1),
     settings.remixesWeight * Math.log(lifetimeAdjusted.remixes + 1),
+  );
+  const activeSitesScore = blend(
+    settings.activeSitesWeight * Math.log(recentMetrics.activeSites + 1),
+    settings.activeSitesWeight * Math.log(lifetimeMetrics.activeSites + 1),
   );
   const conversionsScore = blend(
     settings.conversionsWeight * Math.log(adjusted.conversions + 1),
@@ -1023,6 +1271,13 @@ function getTemplateScoreDetails(
   const remixRateScore = blend(
     settings.remixRateWeight * remixRate,
     settings.remixRateWeight * lifetimeRemixRate,
+  );
+  const activeSiteRate = recentMetrics.activeSites / Math.max(recentMetrics.remixes, 1);
+  const lifetimeActiveSiteRate =
+    lifetimeMetrics.activeSites / Math.max(lifetimeMetrics.remixes, 1);
+  const activeSiteRateScore = blend(
+    settings.activeSiteRateWeight * activeSiteRate,
+    settings.activeSiteRateWeight * lifetimeActiveSiteRate,
   );
 
   const conversionRate =
@@ -1052,7 +1307,10 @@ function getTemplateScoreDetails(
     1 - template.ageDays / Math.max(settings.freshBoostDuration, 1),
   );
   const freshBoostScore = settings.freshTemplateBoost * freshDecay;
+  const freshBoostMultiplier =
+    1 + (settings.freshBoostMultiplier - 1) * freshDecay;
   const momentumScore = computeMomentumScore(template, settings);
+  const repeatFeatureMultiplier = getRepeatFeatureMultiplier(template, settings);
   const overrideMultiplier = getOverrideMultiplier(template.adminOverride, settings);
   const minimumsMet = meetsTrendingMinimums(template, recentMetrics, settings);
   const rotation = computeRotationMultiplier(template, recentMetrics, settings);
@@ -1060,17 +1318,19 @@ function getTemplateScoreDetails(
     template,
     settings,
     minimumsMet,
-    rotation.eligible,
+    rotation,
   );
 
   const componentRows: ScoreComponent[] = [
     { label: "Views", score: viewsScore },
     { label: "Previews", score: previewsScore },
     { label: "Remixes", score: remixesScore },
+    { label: "Active Sites", score: activeSitesScore },
     { label: "Conversions", score: conversionsScore },
     { label: "Revenue", score: revenueScore },
     { label: "Preview Rate", score: previewRateScore },
     { label: "Remix Rate", score: remixRateScore },
+    { label: "Active Site Rate", score: activeSiteRateScore },
     { label: "Conversion Rate", score: conversionRateScore },
     { label: "Revenue Efficiency", score: revenueEfficiencyScore },
     { label: "New User Activation", score: newUserScore },
@@ -1079,6 +1339,24 @@ function getTemplateScoreDetails(
   ];
 
   let runningTotal = componentRows.reduce((total, row) => total + row.score, 0);
+
+  if (repeatFeatureMultiplier !== 1) {
+    const decayedTotal = runningTotal * repeatFeatureMultiplier;
+    componentRows.push({
+      label: "Repeat Feature Decay",
+      score: decayedTotal - runningTotal,
+    });
+    runningTotal = decayedTotal;
+  }
+
+  if (freshBoostMultiplier !== 1) {
+    const boostedTotal = runningTotal * freshBoostMultiplier;
+    componentRows.push({
+      label: "Fresh Boost Multiplier",
+      score: boostedTotal - runningTotal,
+    });
+    runningTotal = boostedTotal;
+  }
 
   if (agePriorityMultiplier !== 1) {
     const prioritizedTotal = runningTotal * agePriorityMultiplier;
@@ -1103,15 +1381,14 @@ function getTemplateScoreDetails(
   const rankingScore = runningTotal;
 
   if (ineligibilityLabel) {
-    if (runningTotal !== 0) {
-      componentRows.push({
-        label: ineligibilityLabel,
-        score: -runningTotal,
-      });
-    }
+    componentRows.push({
+      label: ineligibilityLabel,
+      score: 0,
+    });
 
     return {
       componentRows,
+      feedIneligibilityLabel: ineligibilityLabel,
       finalScore: 0,
       isFeedEligible: false,
       rankingScore,
@@ -1129,6 +1406,7 @@ function getTemplateScoreDetails(
 
   return {
     componentRows,
+    feedIneligibilityLabel: null,
     finalScore: runningTotal,
     isFeedEligible: true,
     rankingScore,
@@ -1147,11 +1425,13 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
         category: template.category,
         creator: template.creator,
         daysInTrending: template.daysInTrending,
+        feedIneligibilityLabel: scoreDetails.feedIneligibilityLabel,
         isCurrentlyTrending: template.isCurrentlyTrending,
         isFeedEligible: scoreDetails.isFeedEligible,
         explorationCandidate: template.explorationCandidate,
         finalScore: scoreDetails.finalScore,
         rankingScore: scoreDetails.rankingScore,
+        manualTrendingDays: template.manualTrendingDays,
         name: template.name,
         previewBase: template.previewBase,
         previewGlow: template.previewGlow,
@@ -1163,6 +1443,7 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
             views: template.week.views,
             previews: template.week.previews,
             remixes: template.week.remixes,
+            activeSites: template.week.activeSites,
             conversions: template.week.conversions,
             revenue: template.week.revenue,
             newUserActivations: template.week.newUserActivations,
@@ -1171,11 +1452,13 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
             views: template.month.views,
             previews: template.month.previews,
             remixes: template.month.remixes,
+            activeSites: template.month.activeSites,
             conversions: template.month.conversions,
             revenue: template.month.revenue,
             newUserActivations: template.month.newUserActivations,
           },
         },
+        trendingFeatureCounts: template.trendingFeatureCounts,
       };
     })
     .sort(
@@ -1257,7 +1540,12 @@ function registerTemplate(
   categoryCounts.set(template.category, (categoryCounts.get(template.category) ?? 0) + 1);
 }
 
-export function applyFeedRules(
+type FeedSelectionEntry = {
+  reservedAgePriorityApplied: boolean;
+  template: RankedTemplate;
+};
+
+function buildFeedSelectionEntries(
   rankedTemplates: RankedTemplate[],
   settings: RankingSettings,
 ) {
@@ -1270,7 +1558,8 @@ export function applyFeedRules(
   const creatorCounts = new Map<string, number>();
   const categoryCounts = new Map<string, number>();
   const usedNames = new Set<string>();
-  const selection: RankedTemplate[] = [];
+  const selection: FeedSelectionEntry[] = [];
+  const selectionTemplates: RankedTemplate[] = [];
   const prioritizedPool = eligibleTemplates.filter(
     (template) =>
       template.explorationCandidate ||
@@ -1287,20 +1576,22 @@ export function applyFeedRules(
   );
 
   for (let position = 0; position < eligibleTemplates.length; position += 1) {
-    const preferredPool = prioritizedPositions.has(position)
+    const reservedAgePriorityPosition = prioritizedPositions.has(position);
+    const preferredPool = reservedAgePriorityPosition
       ? prioritizedPool
       : eligibleTemplates;
-    const fallbackPool = prioritizedPositions.has(position)
+    const fallbackPool = reservedAgePriorityPosition
       ? eligibleTemplates
       : prioritizedPool;
+    const preferredCandidate = takeNextTemplate(
+      preferredPool,
+      usedNames,
+      creatorCounts,
+      categoryCounts,
+      settings,
+    );
     const candidate =
-      takeNextTemplate(
-        preferredPool,
-        usedNames,
-        creatorCounts,
-        categoryCounts,
-        settings,
-      ) ??
+      preferredCandidate ??
       takeNextTemplate(
         fallbackPool,
         usedNames,
@@ -1315,14 +1606,28 @@ export function applyFeedRules(
 
     registerTemplate(
       candidate,
-      selection,
+      selectionTemplates,
       usedNames,
       creatorCounts,
       categoryCounts,
     );
+    selection.push({
+      reservedAgePriorityApplied:
+        reservedAgePriorityPosition && preferredCandidate?.name === candidate.name,
+      template: candidate,
+    });
   }
 
   return selection;
+}
+
+export function applyFeedRules(
+  rankedTemplates: RankedTemplate[],
+  settings: RankingSettings,
+) {
+  return buildFeedSelectionEntries(rankedTemplates, settings).map(
+    (entry) => entry.template,
+  );
 }
 
 export function getTemplatesForDisplay(
@@ -1335,13 +1640,193 @@ export function getTemplatesForDisplay(
       getTemplateDisplayScore(right) - getTemplateDisplayScore(left) ||
       left.name.localeCompare(right.name),
   );
-  const feedTemplates = interleaveByPricing(applyFeedRules(sortedTemplates, settings));
+  const feedTemplates = getFeedTemplates(sortedTemplates, settings);
   const usedNames = new Set(feedTemplates.map((template) => template.name));
+  const nextPricingType =
+    feedTemplates.at(-1)?.pricingType === "free"
+      ? "paid"
+      : "free";
   const remainingTemplates = interleaveByPricing(
     sortedTemplates.filter((template) => !usedNames.has(template.name)),
+    nextPricingType,
   );
 
   return [...feedTemplates, ...remainingTemplates].slice(0, maxCount);
+}
+
+export function getFeedTemplates(
+  rankedTemplates: RankedTemplate[],
+  settings: RankingSettings,
+) {
+  return interleaveByPricing(applyFeedRules(rankedTemplates, settings));
+}
+
+export type TemplatePipelineSnapshot = {
+  agePriorityCandidate: boolean;
+  displayPosition: number | null;
+  feedEligible: boolean;
+  feedIneligibilityLabel: string | null;
+  feedPosition: number | null;
+  finalFeedScore: number;
+  rankingScore: number;
+  reservedAgePriorityApplied: boolean;
+  rotationMultiplier: number | null;
+};
+
+export function getTemplatePipelineSnapshot(
+  rankedTemplates: RankedTemplate[],
+  settings: RankingSettings,
+  templateName: string,
+) {
+  const template = rankedTemplates.find((candidate) => candidate.name === templateName);
+
+  if (!template) {
+    return null;
+  }
+
+  const feedSelectionEntries = buildFeedSelectionEntries(rankedTemplates, settings);
+  const feedTemplates = interleaveByPricing(
+    feedSelectionEntries.map((entry) => entry.template),
+  );
+  const displayTemplates = getTemplatesForDisplay(rankedTemplates, settings);
+  const reservedEntry = feedSelectionEntries.find(
+    (entry) => entry.template.name === templateName,
+  );
+  const feedPosition = feedTemplates.findIndex(
+    (candidate) => candidate.name === templateName,
+  );
+  const displayPosition = displayTemplates.findIndex(
+    (candidate) => candidate.name === templateName,
+  );
+
+  return {
+    agePriorityCandidate:
+      template.explorationCandidate ||
+      (settings.agePriorityWindowDays > 0 &&
+        template.ageDays <= settings.agePriorityWindowDays),
+    displayPosition: displayPosition >= 0 ? displayPosition : null,
+    feedEligible: template.isFeedEligible,
+    feedIneligibilityLabel: template.feedIneligibilityLabel,
+    feedPosition: feedPosition >= 0 ? feedPosition : null,
+    finalFeedScore: template.finalScore,
+    rankingScore: template.rankingScore,
+    reservedAgePriorityApplied: reservedEntry?.reservedAgePriorityApplied ?? false,
+    rotationMultiplier:
+      template.isFeedEligible && template.rankingScore !== 0
+        ? template.finalScore / template.rankingScore
+        : null,
+  };
+}
+
+export function getCurrentTrendingTemplates(
+  rankedTemplates: RankedTemplate[],
+  settings: RankingSettings,
+) {
+  return getFeedTemplates(rankedTemplates, settings).slice(0, settings.currentTrendingCount);
+}
+
+export function projectCurrentTrendingSeeds(
+  seeds: TemplateSeed[],
+  settings: RankingSettings,
+) {
+  let projectedSeeds = seeds;
+
+  for (let pass = 0; pass < 2; pass += 1) {
+    const rankedTemplates = scoreTemplates(settings, projectedSeeds);
+    const currentTrendingTemplates = getCurrentTrendingTemplates(
+      rankedTemplates,
+      settings,
+    );
+    const currentTrendingRanks = new Map(
+      currentTrendingTemplates.map((template, index) => [template.name, index] as const),
+    );
+    const rankBucketSize = Math.max(
+      Math.ceil(currentTrendingTemplates.length / Math.max(settings.maxDays, 1)),
+      1,
+    );
+
+    projectedSeeds = projectedSeeds.map((seed) => {
+      if (seed.manualTrendingDays !== undefined) {
+        return {
+          ...seed,
+          isCurrentlyTrending: true,
+          daysInTrending: seed.manualTrendingDays,
+          daysSinceLastTrending: null,
+          trendingFeatureCounts: ensureCurrentTrendingFeatureCounts(seed),
+        };
+      }
+
+      const currentTrendingRank = currentTrendingRanks.get(seed.name);
+
+      if (currentTrendingRank === undefined) {
+        return {
+          ...seed,
+          isCurrentlyTrending: false,
+          daysInTrending: 0,
+          daysSinceLastTrending: seed.isCurrentlyTrending ? 0 : seed.daysSinceLastTrending,
+        };
+      }
+
+      return {
+        ...seed,
+        isCurrentlyTrending: true,
+        daysInTrending: Math.min(
+          settings.maxDays,
+          1 + Math.floor(currentTrendingRank / rankBucketSize),
+        ),
+        daysSinceLastTrending: null,
+        trendingFeatureCounts: ensureCurrentTrendingFeatureCounts(seed),
+      };
+    });
+  }
+
+  return projectedSeeds;
+}
+
+export function annotateCurrentTrendingTemplates(
+  rankedTemplates: RankedTemplate[],
+  settings: RankingSettings,
+) {
+  const currentTrendingTemplates = getCurrentTrendingTemplates(
+    rankedTemplates,
+    settings,
+  );
+  const currentTrendingRanks = new Map(
+    currentTrendingTemplates.map((template, index) => [template.name, index] as const),
+  );
+  const rankBucketSize = Math.max(
+    Math.ceil(currentTrendingTemplates.length / Math.max(settings.maxDays, 1)),
+    1,
+  );
+
+  return rankedTemplates.map((template) => {
+    if (template.manualTrendingDays !== undefined) {
+      return {
+        ...template,
+        isCurrentlyTrending: true,
+        daysInTrending: template.manualTrendingDays,
+      };
+    }
+
+    const currentTrendingRank = currentTrendingRanks.get(template.name);
+
+    if (currentTrendingRank === undefined) {
+      return {
+        ...template,
+        isCurrentlyTrending: false,
+        daysInTrending: 0,
+      };
+    }
+
+    return {
+      ...template,
+      isCurrentlyTrending: true,
+      daysInTrending: Math.min(
+        settings.maxDays,
+        1 + Math.floor(currentTrendingRank / rankBucketSize),
+      ),
+    };
+  });
 }
 
 export type ScoreBreakdownRow = {

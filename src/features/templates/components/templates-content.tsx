@@ -10,8 +10,10 @@ import {
   formatScore,
   getScoreBreakdown,
   getTemplateDisplayScore,
+  getTemplatePipelineSnapshot,
   getTemplatesForDisplay,
   MAX_TEMPLATE_DISPLAY_COUNT,
+  type TemplatePipelineSnapshot,
   type RankedTemplate,
   type RankedTemplateStats,
   type RankingSettings,
@@ -45,6 +47,7 @@ const templateStatsLabels: {
   { label: "Views", key: "views" },
   { label: "Previews", key: "previews" },
   { label: "Remixes", key: "remixes" },
+  { label: "Active Sites", key: "activeSites" },
   { label: "Conversions", key: "conversions" },
 ];
 
@@ -55,6 +58,7 @@ const templateDetailStatsLabels: {
   { label: "Views", key: "views" },
   { label: "Previews", key: "previews" },
   { label: "Remixes", key: "remixes" },
+  { label: "Active Sites", key: "activeSites" },
   { label: "Conversions", key: "conversions" },
 ];
 
@@ -300,6 +304,62 @@ function getDetailRows(
   ];
 }
 
+function getPipelineRows(
+  template: RankedTemplate,
+  rankingSettings: RankingSettings,
+  pipelineSnapshot: TemplatePipelineSnapshot | null,
+): DetailStatRow[] {
+  return [
+    { label: "Base Ranking Score", value: formatScore(template.rankingScore) },
+    { label: "Final Feed Score", value: formatScore(template.finalScore) },
+    {
+      label: "Rotation Multiplier",
+      value:
+        pipelineSnapshot?.rotationMultiplier === null ||
+        pipelineSnapshot?.rotationMultiplier === undefined
+          ? "-"
+          : pipelineSnapshot.rotationMultiplier.toFixed(2),
+    },
+    { label: "Display Score", value: formatScore(getTemplateDisplayScore(template)) },
+    {
+      label: "Feed Eligible",
+      value: pipelineSnapshot?.feedEligible ? "Yes" : "No",
+    },
+    {
+      label: "Ineligibility Reason",
+      value: pipelineSnapshot?.feedIneligibilityLabel ?? "Eligible",
+    },
+    {
+      label: "Age Priority Candidate",
+      value: pipelineSnapshot?.agePriorityCandidate ? "Yes" : "No",
+    },
+    {
+      label: "Reserved Share Applied",
+      value: pipelineSnapshot?.reservedAgePriorityApplied ? "Yes" : "No",
+    },
+    {
+      label: "Age Priority Reserved Share",
+      value: `${rankingSettings.agePriorityReservedShare}%`,
+    },
+    {
+      label: "Feed Position",
+      value:
+        pipelineSnapshot?.feedPosition === null ||
+        pipelineSnapshot?.feedPosition === undefined
+          ? "-"
+          : `#${String(pipelineSnapshot.feedPosition + 1)}`,
+    },
+    {
+      label: "Display Position",
+      value:
+        pipelineSnapshot?.displayPosition === null ||
+        pipelineSnapshot?.displayPosition === undefined
+          ? "-"
+          : `#${String(pipelineSnapshot.displayPosition + 1)}`,
+    },
+  ];
+}
+
 function getTemplateDataRows(
   template: RankedTemplate,
   templateSeed?: TemplateSeed | null,
@@ -356,6 +416,12 @@ function getTemplateDataRows(
       source: "template_stats.views_l90",
     },
     {
+      label: "All-time Views",
+      value: formatDataValue(templateSeed?.lifetime?.views),
+      usedBy: "Used when Lifetime source is set to all-time",
+      source: "template_stats.views_all_time",
+    },
+    {
       label: "7d Previews",
       value: formatDataValue(templateSeed?.week[1] ?? template.stats.week.previews),
       usedBy: "Preview weight, preview rate, CTR threshold",
@@ -374,22 +440,58 @@ function getTemplateDataRows(
       source: "template_stats.visitors_l90",
     },
     {
+      label: "All-time Previews",
+      value: formatDataValue(templateSeed?.lifetime?.previews),
+      usedBy: "Used when Lifetime source is set to all-time",
+      source: "template_stats.visitors_all_time",
+    },
+    {
       label: "7d Remixes",
       value: formatDataValue(templateSeed?.week[2] ?? template.stats.week.remixes),
       usedBy: "Remix weight and remix rate",
-      source: "template_stats.remixes_l7",
+      source: "template_stats.unique_user_remixes_l7",
     },
     {
       label: "30d Remixes",
       value: formatDataValue(templateSeed?.month[2] ?? template.stats.month.remixes),
       usedBy: "Remix weight and remix rate",
-      source: "template_stats.remixes_l30",
+      source: "template_stats.unique_user_remixes_l30",
     },
     {
       label: "90d Remixes",
       value: formatDataValue(quarter?.[2]),
       usedBy: "90d lookback and lifetime blend",
-      source: "template_stats.remixes_l90",
+      source: "template_stats.unique_user_remixes_l90",
+    },
+    {
+      label: "All-time Remixes",
+      value: formatDataValue(templateSeed?.lifetime?.remixes),
+      usedBy: "Used when Lifetime source is set to all-time",
+      source: "template_stats.unique_user_remixes_all_time",
+    },
+    {
+      label: "7d Active Sites",
+      value: formatDataValue(template.stats.week.activeSites),
+      usedBy: "Active Sites weight and Active Site Rate",
+      source: "template_stats.active_sites_l7",
+    },
+    {
+      label: "30d Active Sites",
+      value: formatDataValue(template.stats.month.activeSites),
+      usedBy: "Active Sites weight and Active Site Rate",
+      source: "template_stats.active_sites_l30",
+    },
+    {
+      label: "90d Active Sites",
+      value: formatDataValue(templateSeed?.activeSites?.quarter),
+      usedBy: "90d lookback and lifetime blend",
+      source: "template_stats.active_sites_l90",
+    },
+    {
+      label: "All-time Active Sites",
+      value: formatDataValue(templateSeed?.lifetime?.activeSites),
+      usedBy: "Used when Lifetime source is set to all-time",
+      source: "template_stats.active_sites_all_time",
     },
     {
       label: "7d Conversions",
@@ -408,6 +510,12 @@ function getTemplateDataRows(
       value: formatDataValue(quarter?.[3]),
       usedBy: "90d lookback and lifetime blend",
       source: "Not in BigQuery yet",
+    },
+    {
+      label: "All-time Conversions",
+      value: formatDataValue(templateSeed?.lifetime?.conversions),
+      usedBy: "Used when Lifetime source is set to all-time",
+      source: "template_stats.sales",
     },
     {
       label: "New User Rate",
@@ -429,8 +537,37 @@ function getTemplateDataRows(
     },
     {
       label: "Days Since Last Trending",
-      value: formatDataValue(templateSeed?.daysSinceLastTrending),
+      value: formatDataValue(
+        template.isCurrentlyTrending ? null : templateSeed?.daysSinceLastTrending,
+      ),
       usedBy: "Trending cooldown",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Trending Feature Count (30d)",
+      value: formatDataValue(
+        templateSeed?.trendingFeatureCounts?.last30Days ??
+          template.trendingFeatureCounts.last30Days,
+      ),
+      usedBy: "Repeat feature decay when window is 30d",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Trending Feature Count (90d)",
+      value: formatDataValue(
+        templateSeed?.trendingFeatureCounts?.last90Days ??
+          template.trendingFeatureCounts.last90Days,
+      ),
+      usedBy: "Repeat feature decay when window is 90d",
+      source: "Not in BigQuery yet",
+    },
+    {
+      label: "Trending Feature Count (Lifetime)",
+      value: formatDataValue(
+        templateSeed?.trendingFeatureCounts?.lifetime ??
+          template.trendingFeatureCounts.lifetime,
+      ),
+      usedBy: "Reference count for historical Trending exposure",
       source: "Not in BigQuery yet",
     },
     {
@@ -472,18 +609,20 @@ function getTemplateDataRows(
   ];
 }
 
-type DetailTab = "statistics" | "score-breakdown" | "data";
+type DetailTab = "statistics" | "score-breakdown" | "pipeline" | "data";
 
 function TemplateDetailView({
   scoreBreakdownSeeds,
   templateSeed,
   template,
   rankingSettings,
+  pipelineSnapshot,
 }: {
   scoreBreakdownSeeds?: TemplateSeed[];
   templateSeed?: TemplateSeed | null;
   template: RankedTemplate;
   rankingSettings: RankingSettings;
+  pipelineSnapshot: TemplatePipelineSnapshot | null;
 }) {
   const [detailStatsFilter, setDetailStatsFilter] =
     useState<DetailStatsFilterValue>("week");
@@ -502,6 +641,11 @@ function TemplateDetailView({
   }, []);
 
   const detailRows = getDetailRows(template, rankingSettings, today);
+  const pipelineRows = getPipelineRows(
+    template,
+    rankingSettings,
+    pipelineSnapshot,
+  );
   const dataRows = getTemplateDataRows(template, templateSeed);
 
   return (
@@ -564,6 +708,12 @@ function TemplateDetailView({
                 Score breakdown
               </button>
               <button
+                className={activeTab === "pipeline" ? "detailTab active" : "detailTab"}
+                onClick={() => setActiveTab("pipeline")}
+              >
+                Pipeline
+              </button>
+              <button
                 className={activeTab === "data" ? "detailTab active" : "detailTab"}
                 onClick={() => setActiveTab("data")}
               >
@@ -599,6 +749,19 @@ function TemplateDetailView({
                   <span className="detailTableCell">{row.label}</span>
                   <span className="detailTableCell">{row.score.toFixed(1)}</span>
                   <span className="detailTableCell alignRight">{row.total.toFixed(1)}</span>
+                </div>
+              ))}
+            </div>
+          ) : activeTab === "pipeline" ? (
+            <div className="detailTable">
+              <div className="detailTableHeader">
+                <span className="detailTableHeaderCell">Stage</span>
+                <span className="detailTableHeaderCell">Value</span>
+              </div>
+              {pipelineRows.map((row) => (
+                <div key={row.label} className="detailTableRow">
+                  <span className="detailTableCell">{row.label}</span>
+                  <span className="detailTableCell">{row.value}</span>
                 </div>
               ))}
             </div>
@@ -681,15 +844,23 @@ export function TemplatesContent({
   const visibleStats = statsFilter === "none" ? null : statsFilter;
 
   if (selectedTemplate) {
-    const freshTemplate = rankedTemplates.find((t) => t.name === selectedTemplate.name);
+    const freshTemplate =
+      allRankedTemplates.find((t) => t.name === selectedTemplate.name);
     const templateSeed = scoreBreakdownSeeds?.find(
       (seed) => seed.name === selectedTemplate.name,
     );
+    const resolvedTemplate = freshTemplate ?? selectedTemplate;
+    const pipelineSnapshot = getTemplatePipelineSnapshot(
+      allRankedTemplates,
+      rankingSettings,
+      resolvedTemplate.name,
+    );
     return (
       <TemplateDetailView
+        pipelineSnapshot={pipelineSnapshot}
         scoreBreakdownSeeds={scoreBreakdownSeeds}
         templateSeed={templateSeed}
-        template={freshTemplate ?? selectedTemplate}
+        template={resolvedTemplate}
         rankingSettings={rankingSettings}
       />
     );

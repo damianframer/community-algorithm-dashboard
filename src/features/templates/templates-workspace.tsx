@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { TemplateListSidebar } from "@/features/templates/components/template-list-sidebar";
 import { getPositionChanges } from "@/features/marketplace/lib/position-change";
@@ -14,8 +14,10 @@ import {
   getTemplateSlug,
 } from "@/features/templates/lib/template-paths";
 import {
+  annotateCurrentTrendingTemplates,
   getRankingSettings,
   getTemplatesForDisplay,
+  projectCurrentTrendingSeeds,
   scoreTemplates,
   type TemplateSeed,
 } from "@/features/templates/lib/template-ranking";
@@ -72,8 +74,32 @@ export function TemplatesWorkspace({
     sidebarSettings,
     savedSidebarSettings,
   );
-  const rankedTemplates = isLoading ? [] : scoreTemplates(rankingSettings, seeds);
-  const savedRankedTemplates = isLoading ? [] : scoreTemplates(savedRankingSettings, seeds);
+  const rankingSeeds = useMemo(
+    () =>
+      isLoading || !seeds
+        ? []
+        : projectCurrentTrendingSeeds(seeds, rankingSettings),
+    [isLoading, rankingSettings, seeds],
+  );
+  const savedRankingSeeds = useMemo(
+    () =>
+      isLoading || !seeds
+        ? []
+        : projectCurrentTrendingSeeds(seeds, savedRankingSettings),
+    [isLoading, savedRankingSettings, seeds],
+  );
+  const rankedTemplates = isLoading
+    ? []
+    : annotateCurrentTrendingTemplates(
+        scoreTemplates(rankingSettings, rankingSeeds),
+        rankingSettings,
+      );
+  const savedRankedTemplates = isLoading
+    ? []
+    : annotateCurrentTrendingTemplates(
+        scoreTemplates(savedRankingSettings, savedRankingSeeds),
+        savedRankingSettings,
+      );
   const displayTemplates = getTemplatesForDisplay(rankedTemplates, rankingSettings);
   const savedDisplayTemplates = getTemplatesForDisplay(
     savedRankedTemplates,
@@ -114,7 +140,7 @@ export function TemplatesWorkspace({
         statsFilter={statsFilter}
         rankedTemplates={rankedTemplates}
         rankingSettings={rankingSettings}
-        scoreBreakdownSeeds={seeds ?? undefined}
+        scoreBreakdownSeeds={rankingSeeds}
         positionChanges={positionChanges}
         showPositionChanges={isEditing}
         selectedTemplate={selectedTemplate}
