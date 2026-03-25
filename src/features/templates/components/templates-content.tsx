@@ -285,8 +285,8 @@ function getDetailRows(
       label: "New User Activations",
       value: String(template.stats.month.newUserActivations),
     },
-    { label: "Is Trending", value: template.isCurrentlyTrending ? "Yes" : "No" },
-    { label: "Days in Trending", value: String(template.daysInTrending) },
+    { label: "In Spotlight", value: template.isCurrentlyTrending ? "Yes" : "No" },
+    { label: "Days in Spotlight", value: String(template.daysInTrending) },
     { label: "Has Fresh Template Boost", value: hasFreshBoost ? "Yes" : "No" },
     { label: "Fresh Boost Start Date", value: approvalDate },
     {
@@ -311,7 +311,7 @@ function getPipelineRows(
 ): DetailStatRow[] {
   return [
     { label: "Base Ranking Score", value: formatScore(template.rankingScore) },
-    { label: "Final Feed Score", value: formatScore(template.finalScore) },
+    { label: "Final Spotlight Score", value: formatScore(template.finalScore) },
     {
       label: "Rotation Multiplier",
       value:
@@ -322,7 +322,7 @@ function getPipelineRows(
     },
     { label: "Display Score", value: formatScore(getTemplateDisplayScore(template)) },
     {
-      label: "Feed Eligible",
+      label: "Spotlight Eligible",
       value: pipelineSnapshot?.feedEligible ? "Yes" : "No",
     },
     {
@@ -342,7 +342,7 @@ function getPipelineRows(
       value: `${rankingSettings.agePriorityReservedShare}%`,
     },
     {
-      label: "Feed Position",
+      label: "Spotlight Position",
       value:
         pipelineSnapshot?.feedPosition === null ||
         pipelineSnapshot?.feedPosition === undefined
@@ -524,27 +524,27 @@ function getTemplateDataRows(
       source: "Not in BigQuery yet",
     },
     {
-      label: "Currently Trending",
+      label: "Currently in Spotlight",
       value: formatDataValue(template.isCurrentlyTrending),
-      usedBy: "Trending rotation eligibility",
+      usedBy: "Spotlight lifecycle eligibility",
       source: "Not in BigQuery yet",
     },
     {
-      label: "Days in Trending",
+      label: "Days in Spotlight",
       value: formatDataValue(template.daysInTrending),
-      usedBy: "Trending duration decay and max days",
+      usedBy: "Duration decay and max days",
       source: "Not in BigQuery yet",
     },
     {
-      label: "Days Since Last Trending",
+      label: "Days Since Last in Spotlight",
       value: formatDataValue(
         template.isCurrentlyTrending ? null : templateSeed?.daysSinceLastTrending,
       ),
-      usedBy: "Trending cooldown",
+      usedBy: "Spotlight cooldown",
       source: "Not in BigQuery yet",
     },
     {
-      label: "Trending Feature Count (30d)",
+      label: "Spotlight Feature Count (30d)",
       value: formatDataValue(
         templateSeed?.trendingFeatureCounts?.last30Days ??
           template.trendingFeatureCounts.last30Days,
@@ -553,7 +553,7 @@ function getTemplateDataRows(
       source: "Not in BigQuery yet",
     },
     {
-      label: "Trending Feature Count (90d)",
+      label: "Spotlight Feature Count (90d)",
       value: formatDataValue(
         templateSeed?.trendingFeatureCounts?.last90Days ??
           template.trendingFeatureCounts.last90Days,
@@ -562,42 +562,18 @@ function getTemplateDataRows(
       source: "Not in BigQuery yet",
     },
     {
-      label: "Trending Feature Count (Lifetime)",
+      label: "Spotlight Feature Count (Lifetime)",
       value: formatDataValue(
         templateSeed?.trendingFeatureCounts?.lifetime ??
           template.trendingFeatureCounts.lifetime,
       ),
-      usedBy: "Reference count for historical Trending exposure",
+      usedBy: "Reference count for historical Spotlight exposure",
       source: "Not in BigQuery yet",
     },
     {
       label: "Exploration Candidate",
       value: formatDataValue(template.explorationCandidate),
-      usedBy: "Reserved feed slots",
-      source: "Not in BigQuery yet",
-    },
-    {
-      label: "Momentum Preview Growth",
-      value: formatDataValue(templateSeed?.momentum.previewGrowth),
-      usedBy: "Momentum weight and acceleration",
-      source: "Not in BigQuery yet",
-    },
-    {
-      label: "Momentum Remix Growth",
-      value: formatDataValue(templateSeed?.momentum.remixGrowth),
-      usedBy: "Momentum weight and acceleration",
-      source: "Not in BigQuery yet",
-    },
-    {
-      label: "Previous Preview Growth",
-      value: formatDataValue(templateSeed?.momentum.previousPreviewGrowth),
-      usedBy: "Acceleration baseline",
-      source: "Not in BigQuery yet",
-    },
-    {
-      label: "Previous Remix Growth",
-      value: formatDataValue(templateSeed?.momentum.previousRemixGrowth),
-      usedBy: "Acceleration baseline",
+      usedBy: "Reserved Spotlight slots",
       source: "Not in BigQuery yet",
     },
     {
