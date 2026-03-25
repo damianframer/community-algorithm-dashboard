@@ -54,12 +54,6 @@ const MANUAL_TRENDING_OVERRIDES = {
     trendingFeatureCount: 6,
   },
 } as const;
-const NULL_MOMENTUM: TemplateSeed["momentum"] = {
-  previewGrowth: null,
-  remixGrowth: null,
-  previousPreviewGrowth: null,
-  previousRemixGrowth: null,
-};
 let cachedSeeds: TemplateSeed[] | null = null;
 let cachedAt = 0;
 
@@ -493,7 +487,6 @@ function synthesizeSeed(
     daysSinceLastTrending,
     adminOverride,
     explorationCandidate,
-    momentum: NULL_MOMENTUM,
     previewBase,
     previewGlow,
   };

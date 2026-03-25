@@ -12,7 +12,6 @@ export type StatsRange = "week" | "month";
 export type FeatureCountWindow = "30d" | "90d" | "lifetime";
 export type LifetimeMetricSource = "90d" | "all-time";
 export type LookbackWindow = "7 days" | "30 days" | "90 days";
-export type MomentumWindow = "3 days" | "7 days" | "14 days" | "30 days";
 
 type MetricTuple = [views: number, previews: number, remixes: number, conversions: number];
 
@@ -54,12 +53,6 @@ export type TemplateSeed = {
   explorationCandidate: boolean;
   isCurrentlyTrending: boolean;
   manualTrendingDays?: number;
-  momentum: {
-    previousPreviewGrowth: number | null;
-    previousRemixGrowth: number | null;
-    previewGrowth: number | null;
-    remixGrowth: number | null;
-  };
   month: MetricTuple;
   name: string;
   previewBase: string;
@@ -111,7 +104,6 @@ export const MAX_TEMPLATE_DISPLAY_COUNT = 400;
 export type RankingSettings = {
   activeSiteRateWeight: number;
   activeSitesWeight: number;
-  accelerationWeight: number;
   agePriorityBoost: number;
   agePriorityReservedShare: number;
   agePriorityWindowDays: number;
@@ -128,14 +120,11 @@ export type RankingSettings = {
   freshBoostMultiplier: number;
   freshBoostDuration: number;
   freshTemplateBoost: number;
-  lifetimeWeight: number;
   lifetimeSource: LifetimeMetricSource;
   lookbackWindow: LookbackWindow;
   maxDays: number;
   minPreviews: number;
   minRemixes: number;
-  momentumWeight: number;
-  momentumWindow: MomentumWindow;
   newUserBoost: number;
   overrideBoost: number;
   overrideDecay: number;
@@ -237,7 +226,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "great",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.16, remixGrowth: 0.22, previousPreviewGrowth: 0.1, previousRemixGrowth: 0.12 },
   },
   {
     name: "Axel",
@@ -257,7 +245,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.08, remixGrowth: 0.1, previousPreviewGrowth: 0.06, previousRemixGrowth: 0.07 },
   },
   {
     name: "Xtract",
@@ -277,7 +264,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 6,
     adminOverride: "none",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.28, remixGrowth: 0.34, previousPreviewGrowth: 0.12, previousRemixGrowth: 0.14 },
   },
   {
     name: "Launchboard",
@@ -297,7 +283,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "great",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.14, remixGrowth: 0.2, previousPreviewGrowth: 0.08, previousRemixGrowth: 0.1 },
   },
   {
     name: "Chainlight",
@@ -317,7 +302,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 2,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.04, remixGrowth: 0.02, previousPreviewGrowth: 0.07, previousRemixGrowth: 0.05 },
   },
   {
     name: "Limitless",
@@ -337,7 +321,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.19, remixGrowth: 0.23, previousPreviewGrowth: 0.1, previousRemixGrowth: 0.11 },
   },
   {
     name: "Nova Grid",
@@ -357,7 +340,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "great",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.31, remixGrowth: 0.38, previousPreviewGrowth: 0.09, previousRemixGrowth: 0.12 },
   },
   {
     name: "Orbit",
@@ -377,7 +359,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 9,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.03, remixGrowth: 0.05, previousPreviewGrowth: 0.02, previousRemixGrowth: 0.03 },
   },
   {
     name: "Vanta",
@@ -397,7 +378,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "bad",
     explorationCandidate: false,
-    momentum: { previewGrowth: -0.04, remixGrowth: -0.02, previousPreviewGrowth: 0.05, previousRemixGrowth: 0.04 },
   },
   {
     name: "Helio",
@@ -417,7 +397,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 1,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.09, remixGrowth: 0.11, previousPreviewGrowth: 0.04, previousRemixGrowth: 0.06 },
   },
   {
     name: "Monaco",
@@ -437,7 +416,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.02, remixGrowth: 0.01, previousPreviewGrowth: 0.04, previousRemixGrowth: 0.03 },
   },
   {
     name: "Driftline",
@@ -457,7 +435,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.07, remixGrowth: 0.09, previousPreviewGrowth: 0.06, previousRemixGrowth: 0.07 },
   },
   {
     name: "Solace",
@@ -477,7 +454,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.26, remixGrowth: 0.29, previousPreviewGrowth: 0.1, previousRemixGrowth: 0.12 },
   },
   {
     name: "Pixeldeck",
@@ -497,7 +473,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.12, remixGrowth: 0.08, previousPreviewGrowth: 0.06, previousRemixGrowth: 0.05 },
   },
   {
     name: "Northstar",
@@ -517,7 +492,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 12,
     adminOverride: "bad",
     explorationCandidate: false,
-    momentum: { previewGrowth: -0.02, remixGrowth: 0.01, previousPreviewGrowth: 0.02, previousRemixGrowth: 0.03 },
   },
   {
     name: "Pulsekit",
@@ -537,7 +511,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 4,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.05, remixGrowth: 0.04, previousPreviewGrowth: 0.02, previousRemixGrowth: 0.03 },
   },
   {
     name: "Marble",
@@ -557,7 +530,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.06, remixGrowth: 0.05, previousPreviewGrowth: 0.03, previousRemixGrowth: 0.03 },
   },
   {
     name: "Avenue",
@@ -577,7 +549,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.24, remixGrowth: 0.27, previousPreviewGrowth: 0.08, previousRemixGrowth: 0.1 },
   },
   {
     name: "Halo",
@@ -597,7 +568,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.22, remixGrowth: 0.31, previousPreviewGrowth: 0.06, previousRemixGrowth: 0.08 },
   },
   {
     name: "Cascade",
@@ -617,7 +587,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 2,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.11, remixGrowth: 0.12, previousPreviewGrowth: 0.08, previousRemixGrowth: 0.09 },
   },
   {
     name: "Formica",
@@ -637,7 +606,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.04, remixGrowth: 0.03, previousPreviewGrowth: 0.05, previousRemixGrowth: 0.04 },
   },
   {
     name: "Viewport",
@@ -657,7 +625,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "none",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.2, remixGrowth: 0.24, previousPreviewGrowth: 0.08, previousRemixGrowth: 0.09 },
   },
   {
     name: "Quartz",
@@ -677,7 +644,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: 7,
     adminOverride: "none",
     explorationCandidate: false,
-    momentum: { previewGrowth: 0.03, remixGrowth: 0.02, previousPreviewGrowth: 0.03, previousRemixGrowth: 0.02 },
   },
   {
     name: "Signal",
@@ -697,7 +663,6 @@ const templateSeeds: TemplateSeed[] = [
     daysSinceLastTrending: null,
     adminOverride: "great",
     explorationCandidate: true,
-    momentum: { previewGrowth: 0.37, remixGrowth: 0.44, previousPreviewGrowth: 0.09, previousRemixGrowth: 0.11 },
   },
 ];
 
@@ -943,7 +908,6 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
     newUserBoost: getNumericSettingValue(settings, "New User Activation", "Boost"),
     lookbackWindow: getDropdownSettingValue(settings, "Time Window", "Lookback window") as LookbackWindow,
     recencyWeight: getNumericSettingValue(settings, "Time Window", "Recency weight"),
-    lifetimeWeight: getNumericSettingValue(settings, "Time Window", "Lifetime weight"),
     lifetimeSource: getDropdownSettingValue(
       settings,
       "Time Window",
@@ -960,31 +924,28 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
     minRemixes: getNumericSettingValue(settings, "Minimum Statistics", "Min. Remixes"),
     paidMinPreviews: getNumericSettingValue(settings, "Minimum Statistics", "Paid Min. Previews"),
     paidMinRemixes: getNumericSettingValue(settings, "Minimum Statistics", "Paid Min. Remixes"),
-    momentumWindow: getDropdownSettingValue(settings, "Momentum", "Window") as MomentumWindow,
-    momentumWeight: getNumericSettingValue(settings, "Momentum", "Weight"),
-    accelerationWeight: getNumericSettingValue(settings, "Momentum", "Acceleration"),
     currentTrendingCount: getNumericSettingValue(
       settings,
-      "Trending Rotation",
-      "Trending slots",
+      "Spotlight Lifecycle",
+      "Spotlight size",
     ),
     featureCountThreshold: getNumericSettingValue(
       settings,
-      "Trending Rotation",
+      "Spotlight Lifecycle",
       "Feature count threshold",
     ),
     featureCountWindow: getDropdownSettingValue(
       settings,
-      "Trending Rotation",
+      "Spotlight Lifecycle",
       "Feature count window",
     ) as FeatureCountWindow,
-    durationDecay: getNumericSettingValue(settings, "Trending Rotation", "Duration decay"),
-    maxDays: getNumericSettingValue(settings, "Trending Rotation", "Max Days"),
-    cooldown: getNumericSettingValue(settings, "Trending Rotation", "Cooldown"),
-    ctrThreshold: getNumericSettingValue(settings, "Trending Rotation", "CTR Threshold"),
+    durationDecay: getNumericSettingValue(settings, "Spotlight Lifecycle", "Duration decay"),
+    maxDays: getNumericSettingValue(settings, "Spotlight Lifecycle", "Max Days"),
+    cooldown: getNumericSettingValue(settings, "Spotlight Lifecycle", "Cooldown"),
+    ctrThreshold: getNumericSettingValue(settings, "Spotlight Lifecycle", "CTR Threshold"),
     repeatFeatureDecay: getNumericSettingValue(
       settings,
-      "Trending Rotation",
+      "Spotlight Lifecycle",
       "Repeat feature decay",
     ),
     creatorCap: getNumericSettingValue(settings, "Diversity", "Creator Cap"),
@@ -1053,54 +1014,6 @@ function getAdjustedMetrics(
     remixes: metrics.remixes * remixMultiplier,
     conversions: metrics.conversions * conversionMultiplier,
   };
-}
-
-function clampGrowth(growth: number) {
-  return Math.max(growth, -0.95);
-}
-
-function computeMomentumScore(
-  template: TemplateDefinition,
-  settings: RankingSettings,
-) {
-  const {
-    previewGrowth: rawPreviewGrowth,
-    remixGrowth: rawRemixGrowth,
-    previousPreviewGrowth: rawPreviousPreviewGrowth,
-    previousRemixGrowth: rawPreviousRemixGrowth,
-  } = template.momentum;
-
-  if (
-    rawPreviewGrowth === null ||
-    rawRemixGrowth === null ||
-    rawPreviousPreviewGrowth === null ||
-    rawPreviousRemixGrowth === null
-  ) {
-    return 0;
-  }
-
-  const windowFactor =
-    settings.momentumWindow === "3 days"
-      ? 1.2
-      : settings.momentumWindow === "7 days"
-        ? 1
-        : settings.momentumWindow === "14 days"
-          ? 0.82
-          : 0.6;
-
-  const previewGrowth = clampGrowth(rawPreviewGrowth * windowFactor);
-  const remixGrowth = clampGrowth(rawRemixGrowth * windowFactor);
-  const previousPreviewGrowth = clampGrowth(rawPreviousPreviewGrowth * windowFactor);
-  const previousRemixGrowth = clampGrowth(rawPreviousRemixGrowth * windowFactor);
-
-  const baseMomentumCurrent = 0.4 * previewGrowth + 0.6 * remixGrowth;
-  const baseMomentumPrevious = 0.4 * previousPreviewGrowth + 0.6 * previousRemixGrowth;
-  const accelerationValue = Math.max(0, baseMomentumCurrent - baseMomentumPrevious);
-
-  return (
-    settings.momentumWeight * Math.max(0, baseMomentumCurrent) +
-    settings.accelerationWeight * accelerationValue
-  );
 }
 
 function hasRecentActivity(metrics: RankingMetricSet) {
@@ -1196,12 +1109,12 @@ function getFeedIneligibilityLabel(
   rotation: ReturnType<typeof computeRotationMultiplier>,
 ) {
   if (!minimumsMet) {
-    return "Below Trending Minimums";
+    return "Below Spotlight Minimums";
   }
 
   if (!rotation.eligible) {
     if (template.isCurrentlyTrending && template.daysInTrending > settings.maxDays) {
-      return "Exceeded Max Trending Days";
+      return "Exceeded Max Spotlight Days";
     }
 
     if (
@@ -1209,10 +1122,10 @@ function getFeedIneligibilityLabel(
       template.daysSinceLastTrending !== null &&
       template.daysSinceLastTrending < settings.cooldown
     ) {
-      return "Trending Cooldown";
+      return "Spotlight Cooldown";
     }
 
-    return "Feed Ineligible";
+    return "Spotlight Ineligible";
   }
 
   return null;
@@ -1228,7 +1141,7 @@ function getTemplateScoreDetails(
   const adjusted = getAdjustedMetrics(recentMetrics, template, settings);
   const lifetimeAdjusted = getAdjustedMetrics(lifetimeMetrics, template, settings);
   const rw = settings.recencyWeight / 100;
-  const lw = settings.lifetimeWeight / 100;
+  const lw = 1 - rw;
   const blend = (recent: number, lifetime: number) => rw * recent + lw * lifetime;
 
   const viewsScore = blend(
@@ -1309,7 +1222,6 @@ function getTemplateScoreDetails(
   const freshBoostScore = settings.freshTemplateBoost * freshDecay;
   const freshBoostMultiplier =
     1 + (settings.freshBoostMultiplier - 1) * freshDecay;
-  const momentumScore = computeMomentumScore(template, settings);
   const repeatFeatureMultiplier = getRepeatFeatureMultiplier(template, settings);
   const overrideMultiplier = getOverrideMultiplier(template.adminOverride, settings);
   const minimumsMet = meetsTrendingMinimums(template, recentMetrics, settings);
@@ -1335,7 +1247,6 @@ function getTemplateScoreDetails(
     { label: "Revenue Efficiency", score: revenueEfficiencyScore },
     { label: "New User Activation", score: newUserScore },
     { label: "Fresh Template Boost", score: freshBoostScore },
-    { label: "Momentum", score: momentumScore },
   ];
 
   let runningTotal = componentRows.reduce((total, row) => total + row.score, 0);
@@ -1398,7 +1309,7 @@ function getTemplateScoreDetails(
   if (rotation.value !== 1) {
     const rotatedTotal = runningTotal * rotation.value;
     componentRows.push({
-      label: "Trending Rotation",
+      label: "Spotlight Lifecycle",
       score: rotatedTotal - runningTotal,
     });
     runningTotal = rotatedTotal;
