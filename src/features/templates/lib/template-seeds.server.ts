@@ -9,7 +9,14 @@ import {
   type TemplateSeed,
 } from "@/features/templates/lib/template-ranking";
 
-const bigquery = new BigQuery();
+const credentials = process.env.GCP_SERVICE_ACCOUNT_KEY
+  ? JSON.parse(process.env.GCP_SERVICE_ACCOUNT_KEY)
+  : undefined;
+
+const bigquery = new BigQuery({
+  projectId: credentials?.project_id,
+  credentials,
+});
 
 const QUERY = `
   SELECT
