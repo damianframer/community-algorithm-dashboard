@@ -135,6 +135,7 @@ export function TemplatesWorkspace({
       )}
       <TemplatesContent
         getTemplateHref={(template) => getTemplateHref(template.name)}
+        isLoading={isLoading}
         searchQuery={searchQuery}
         pricingFilter={pricingFilter}
         statsFilter={statsFilter}
