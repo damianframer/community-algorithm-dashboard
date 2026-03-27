@@ -71,6 +71,7 @@ const detailStatsFilterOptions: FilterOption<DetailStatsFilterValue>[] = [
 
 type TemplatesContentProps = {
   getTemplateHref: (template: RankedTemplate) => string;
+  isLoading?: boolean;
   searchQuery: string;
   pricingFilter: TemplatePricingFilterValue;
   statsFilter: StatsFilterValue;
@@ -766,9 +767,11 @@ function TemplateDetailView({
 }
 
 const PAGE_SIZE = 48;
+const LOADING_CARD_COUNT = 6;
 
 export function TemplatesContent({
   getTemplateHref,
+  isLoading = false,
   onPricingFilterChange,
   onStatsFilterChange,
   pricingFilter,
@@ -849,7 +852,11 @@ export function TemplatesContent({
           <div className="contentTop">
             <div className="contentTitleWrap">
               <h1 className="contentTitle">Templates</h1>
-              <span className="contentCount">{visibleTemplates.length} of {rankedTemplates.length}</span>
+              <span className="contentCount">
+                {isLoading
+                  ? "Loading templates..."
+                  : `${visibleTemplates.length} of ${rankedTemplates.length}`}
+              </span>
             </div>
 
             <div className="contentFilters" aria-label="Template filters">
@@ -869,62 +876,79 @@ export function TemplatesContent({
           </div>
 
           <div className="templateGrid">
-            {displayedTemplates.map((template) => {
-              const stats = visibleStats ? template.stats[visibleStats] : null;
+            {isLoading
+              ? Array.from({ length: LOADING_CARD_COUNT }, (_, index) => (
+                  <div key={index} className="templateCard templateCardLoading" aria-hidden="true">
+                    <div className="templateImagePlaceholder templateSkeletonBlock" />
+                    <div className="templateCardHeader">
+                      <div className="templateNameWrap">
+                        <span className="templateSkeletonLine title" />
+                        <span className="templateSkeletonLine meta" />
+                      </div>
 
-              return (
-                <Link
-                  key={template.name}
-                  href={getTemplateHref(template)}
-                  className={stats ? "templateCard hasStats" : "templateCard"}
-                >
-                  <div
-                    className="templateImagePlaceholder"
-                    style={getTemplatePreviewStyle(template)}
-                  >
-                    {showPositionChanges ? (
-                      <PositionChangeBadge
-                        change={positionChanges.get(template.name)}
-                      />
-                    ) : null}
-                  </div>
-
-                  <div className="templateCardHeader">
-                    <div className="templateNameWrap">
-                      <span className="templateName">{template.name}</span>
-                      <span className="templateMeta">
-                        {template.creator} · {template.category}
-                      </span>
-                    </div>
-
-                    <div className="templateBadges">
-                      <span className="templateBadge muted">{template.pricingLabel}</span>
-                      <span className="templateBadge">
-                        {formatScore(getTemplateDisplayScore(template))} Score
-                      </span>
+                      <div className="templateBadges">
+                        <span className="templateSkeletonBadge" />
+                        <span className="templateSkeletonBadge wide" />
+                      </div>
                     </div>
                   </div>
+                ))
+              : displayedTemplates.map((template) => {
+                  const stats = visibleStats ? template.stats[visibleStats] : null;
 
-                  {stats
-                    ? templateStatsLabels.map((stat) => (
-                        <div key={stat.key} className="templateStatRow">
-                          <span className="templateStatLabel">{stat.label}</span>
-                          <span className="templateStatValue">
-                            {formatMetricValue(stats[stat.key])}
+                  return (
+                    <Link
+                      key={template.name}
+                      href={getTemplateHref(template)}
+                      className={stats ? "templateCard hasStats" : "templateCard"}
+                    >
+                      <div
+                        className="templateImagePlaceholder"
+                        style={getTemplatePreviewStyle(template)}
+                      >
+                        {showPositionChanges ? (
+                          <PositionChangeBadge
+                            change={positionChanges.get(template.name)}
+                          />
+                        ) : null}
+                      </div>
+
+                      <div className="templateCardHeader">
+                        <div className="templateNameWrap">
+                          <span className="templateName">{template.name}</span>
+                          <span className="templateMeta">
+                            {template.creator} · {template.category}
                           </span>
                         </div>
-                      ))
-                    : null}
-                </Link>
-              );
-            })}
+
+                        <div className="templateBadges">
+                          <span className="templateBadge muted">{template.pricingLabel}</span>
+                          <span className="templateBadge">
+                            {formatScore(getTemplateDisplayScore(template))} Score
+                          </span>
+                        </div>
+                      </div>
+
+                      {stats
+                        ? templateStatsLabels.map((stat) => (
+                            <div key={stat.key} className="templateStatRow">
+                              <span className="templateStatLabel">{stat.label}</span>
+                              <span className="templateStatValue">
+                                {formatMetricValue(stats[stat.key])}
+                              </span>
+                            </div>
+                          ))
+                        : null}
+                    </Link>
+                  );
+                })}
           </div>
-          {hasMore ? (
+          {hasMore && !isLoading ? (
             <button className="loadMoreButton" onClick={loadMore}>
               Load more ({visibleTemplates.length - displayedTemplates.length} remaining)
             </button>
           ) : null}
-          {visibleTemplates.length === 0 ? (
+          {visibleTemplates.length === 0 && !isLoading ? (
             <p className="templateEmptyState">
               No templates match the current search and filters.
             </p>

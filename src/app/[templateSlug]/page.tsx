@@ -22,7 +22,7 @@ export default async function TemplateDetailPage({
 
   return (
     <div className="appShell">
-      <Topbar activeCategory="Templates" />
+      <Topbar activeCategory="Templates" historyHref="/history" />
       <TemplatesWorkspace
         initialSeeds={seeds}
         selectedTemplateSlug={templateSlug}
