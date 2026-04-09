@@ -4,6 +4,7 @@ import {
   createContext,
   useContext,
   useEffect,
+  useMemo,
   useState,
   type Dispatch,
   type ReactNode,
@@ -12,6 +13,7 @@ import {
 
 import type {
   SettingDefinition,
+  SettingSection,
   SidebarSettingsState,
 } from "@/features/settings/lib/settings-state";
 import {
@@ -31,9 +33,13 @@ import type {
   StatsFilterValue,
   TemplatePricingFilterValue,
 } from "@/features/templates/components/templates-content";
-import { templatesSidebarSections } from "@/features/templates/lib/sidebar-settings";
+import {
+  getTemplateWorkspaceLegacyStorageKeys,
+  getTemplateWorkspaceSidebarSections,
+  getTemplateWorkspaceStorageKey,
+  type TemplateWorkspaceVariant,
+} from "@/features/templates/lib/template-workspace-config";
 
-const STORAGE_KEY = "templates-workspace-state";
 const STORAGE_VERSION = 3;
 
 type TemplatesWorkspaceContextValue = {
@@ -65,17 +71,14 @@ type RestoredTemplatesWorkspaceState = {
   currentHistoryEntryId: string | null;
   historyEntries: TemplateHistoryEntry[];
   savedSidebarSettings: SidebarSettingsState;
+  sourceStorageKey: string;
 };
-
-const defaultSidebarSettingsState = createSidebarSettingsState(
-  templatesSidebarSections,
-);
 
 const TemplatesWorkspaceStateContext =
   createContext<TemplatesWorkspaceContextValue | null>(null);
 
-function getDefaultSidebarSettingsState() {
-  return cloneSidebarSettingsState(defaultSidebarSettingsState);
+function getDefaultSidebarSettingsState(sections: SettingSection[]) {
+  return createSidebarSettingsState(sections);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -116,13 +119,14 @@ function restoreNumericSetting(
 
 function restoreSidebarSettingsState(
   persistedSettingsState: unknown,
+  sections: SettingSection[],
 ): SidebarSettingsState {
   if (!isRecord(persistedSettingsState)) {
-    return getDefaultSidebarSettingsState();
+    return getDefaultSidebarSettingsState(sections);
   }
 
   return Object.fromEntries(
-    templatesSidebarSections.map((section) => {
+    sections.map((section) => {
       const persistedSectionState = isRecord(persistedSettingsState[section.title])
         ? (persistedSettingsState[section.title] as Record<string, unknown>)
         : null;
@@ -156,85 +160,96 @@ function restoreSidebarSettingsState(
   ) as SidebarSettingsState;
 }
 
-function readPersistedTemplatesWorkspaceState() {
+function readPersistedTemplatesWorkspaceState(
+  storageKeys: string[],
+  sections: SettingSection[],
+) {
   if (typeof window === "undefined") {
     return null;
   }
 
-  try {
-    const rawValue = window.localStorage.getItem(STORAGE_KEY);
+  for (const storageKey of storageKeys) {
+    try {
+      const rawValue = window.localStorage.getItem(storageKey);
 
-    if (!rawValue) {
-      return null;
-    }
+      if (!rawValue) {
+        continue;
+      }
 
-    const parsedValue = JSON.parse(rawValue) as PersistedTemplatesWorkspaceState;
+      const parsedValue = JSON.parse(rawValue) as PersistedTemplatesWorkspaceState;
 
-    if (!isRecord(parsedValue) || !("savedSidebarSettings" in parsedValue)) {
-      return null;
-    }
+      if (!isRecord(parsedValue) || !("savedSidebarSettings" in parsedValue)) {
+        continue;
+      }
 
-    const savedSidebarSettings = restoreSidebarSettingsState(
-      parsedValue.savedSidebarSettings,
-    );
+      const savedSidebarSettings = restoreSidebarSettingsState(
+        parsedValue.savedSidebarSettings,
+        sections,
+      );
 
-    if (parsedValue.version === 1) {
+      if (parsedValue.version === 1) {
+        return {
+          currentHistoryEntryId: null,
+          historyEntries: [],
+          savedSidebarSettings,
+          sourceStorageKey: storageKey,
+        } satisfies RestoredTemplatesWorkspaceState;
+      }
+
+      if (parsedValue.version !== 2 && parsedValue.version !== STORAGE_VERSION) {
+        continue;
+      }
+
+      const historyEntries = Array.isArray(parsedValue.historyEntries)
+        ? parsedValue.historyEntries
+            .filter(isTemplateHistoryEntry)
+            .map((entry) => ({
+              ...entry,
+              changedDetails: Array.isArray(entry.changedDetails)
+                ? entry.changedDetails.filter(
+                    (item) =>
+                      typeof item === "object" &&
+                      item !== null &&
+                      "label" in item &&
+                      typeof item.label === "string" &&
+                      "section" in item &&
+                      typeof item.section === "string" &&
+                      "from" in item &&
+                      typeof item.from === "string" &&
+                      "to" in item &&
+                      typeof item.to === "string",
+                  )
+                : [],
+              changedSettings: Array.isArray(entry.changedSettings)
+                ? entry.changedSettings.filter((item) => typeof item === "string")
+                : [],
+              sidebarSettings: restoreSidebarSettingsState(entry.sidebarSettings, sections),
+            }))
+        : [];
+
+      const currentHistoryEntryId =
+        typeof parsedValue.currentHistoryEntryId === "string"
+          ? parsedValue.currentHistoryEntryId
+          : historyEntries.find((entry) =>
+              JSON.stringify(entry.sidebarSettings) === JSON.stringify(savedSidebarSettings),
+            )?.id ?? null;
+
       return {
-        currentHistoryEntryId: null,
-        historyEntries: [],
+        currentHistoryEntryId,
+        historyEntries,
         savedSidebarSettings,
+        sourceStorageKey: storageKey,
       } satisfies RestoredTemplatesWorkspaceState;
+    } catch {
+      continue;
     }
-
-    if (parsedValue.version !== 2 && parsedValue.version !== STORAGE_VERSION) {
-      return null;
-    }
-
-    const historyEntries = Array.isArray(parsedValue.historyEntries)
-      ? parsedValue.historyEntries
-          .filter(isTemplateHistoryEntry)
-          .map((entry) => ({
-            ...entry,
-            changedDetails: Array.isArray(entry.changedDetails)
-              ? entry.changedDetails.filter(
-                  (item) =>
-                    typeof item === "object" &&
-                    item !== null &&
-                    "label" in item &&
-                    typeof item.label === "string" &&
-                    "section" in item &&
-                    typeof item.section === "string" &&
-                    "from" in item &&
-                    typeof item.from === "string" &&
-                    "to" in item &&
-                    typeof item.to === "string",
-                )
-              : [],
-            changedSettings: Array.isArray(entry.changedSettings)
-              ? entry.changedSettings.filter((item) => typeof item === "string")
-              : [],
-            sidebarSettings: restoreSidebarSettingsState(entry.sidebarSettings),
-          }))
-      : [];
-
-    const currentHistoryEntryId =
-      typeof parsedValue.currentHistoryEntryId === "string"
-        ? parsedValue.currentHistoryEntryId
-        : historyEntries.find((entry) =>
-            JSON.stringify(entry.sidebarSettings) === JSON.stringify(savedSidebarSettings),
-          )?.id ?? null;
-
-    return {
-      currentHistoryEntryId,
-      historyEntries,
-      savedSidebarSettings,
-    } satisfies RestoredTemplatesWorkspaceState;
-  } catch {
-    return null;
   }
+
+  return null;
 }
 
 function writePersistedTemplatesWorkspaceState(
+  storageKey: string,
   currentHistoryEntryId: string | null,
   savedSidebarSettings: SidebarSettingsState,
   historyEntries: TemplateHistoryEntry[],
@@ -250,14 +265,27 @@ function writePersistedTemplatesWorkspaceState(
     version: STORAGE_VERSION,
   };
 
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(value));
+  window.localStorage.setItem(storageKey, JSON.stringify(value));
 }
 
 export function TemplatesWorkspaceStateProvider({
   children,
+  variant = "template",
 }: {
   children: ReactNode;
+  variant?: TemplateWorkspaceVariant;
 }) {
+  const sections = getTemplateWorkspaceSidebarSections(variant);
+  const storageKey = getTemplateWorkspaceStorageKey(variant);
+  const storageKeys = useMemo(
+    () => [
+      storageKey,
+      ...getTemplateWorkspaceLegacyStorageKeys(variant).filter(
+        (key) => key !== storageKey,
+      ),
+    ],
+    [storageKey, variant],
+  );
   const [searchQuery, setSearchQuery] = useState("");
   const [pricingFilter, setPricingFilter] =
     useState<TemplatePricingFilterValue>("all");
@@ -265,13 +293,16 @@ export function TemplatesWorkspaceStateProvider({
   const [currentHistoryEntryId, setCurrentHistoryEntryId] = useState<string | null>(null);
   const [historyEntries, setHistoryEntries] = useState<TemplateHistoryEntry[]>([]);
   const [savedSidebarSettings, setSavedSidebarSettings] =
-    useState<SidebarSettingsState>(() => getDefaultSidebarSettingsState());
+    useState<SidebarSettingsState>(() => getDefaultSidebarSettingsState(sections));
   const [sidebarSettings, setSidebarSettings] = useState<SidebarSettingsState>(
-    () => getDefaultSidebarSettingsState(),
+    () => getDefaultSidebarSettingsState(sections),
   );
 
   useEffect(() => {
-    const persistedSidebarSettings = readPersistedTemplatesWorkspaceState();
+    const persistedSidebarSettings = readPersistedTemplatesWorkspaceState(
+      storageKeys,
+      sections,
+    );
 
     if (!persistedSidebarSettings) {
       return;
@@ -283,7 +314,16 @@ export function TemplatesWorkspaceStateProvider({
     );
     setCurrentHistoryEntryId(persistedSidebarSettings.currentHistoryEntryId);
     setHistoryEntries(persistedSidebarSettings.historyEntries);
-  }, []);
+
+    if (persistedSidebarSettings.sourceStorageKey !== storageKey) {
+      writePersistedTemplatesWorkspaceState(
+        storageKey,
+        persistedSidebarSettings.currentHistoryEntryId,
+        persistedSidebarSettings.savedSidebarSettings,
+        persistedSidebarSettings.historyEntries,
+      );
+    }
+  }, [sections, storageKey, storageKeys]);
 
   function resetSidebarSettings() {
     setSidebarSettings(cloneSidebarSettingsState(savedSidebarSettings));
@@ -292,13 +332,13 @@ export function TemplatesWorkspaceStateProvider({
   function saveSidebarSettings() {
     const normalizedSettings = normalizeSidebarSettingsState(
       sidebarSettings,
-      templatesSidebarSections,
+      sections,
     );
     const nextSavedSidebarSettings = cloneSidebarSettingsState(normalizedSettings);
     const nextHistoryEntry = createTemplateHistoryEntry(
         savedSidebarSettings,
         nextSavedSidebarSettings,
-        templatesSidebarSections,
+        sections,
       );
     const nextHistoryEntries = [
       nextHistoryEntry,
@@ -310,6 +350,7 @@ export function TemplatesWorkspaceStateProvider({
     setCurrentHistoryEntryId(nextHistoryEntry.id);
     setHistoryEntries(nextHistoryEntries);
     writePersistedTemplatesWorkspaceState(
+      storageKey,
       nextHistoryEntry.id,
       nextSavedSidebarSettings,
       nextHistoryEntries,
@@ -331,6 +372,7 @@ export function TemplatesWorkspaceStateProvider({
     setSidebarSettings(cloneSidebarSettingsState(nextSavedSidebarSettings));
     setCurrentHistoryEntryId(entry.id);
     writePersistedTemplatesWorkspaceState(
+      storageKey,
       entry.id,
       nextSavedSidebarSettings,
       historyEntries,

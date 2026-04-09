@@ -26,6 +26,7 @@ export default async function TemplateDetailPage({
       <TemplatesWorkspace
         initialSeeds={seeds}
         selectedTemplateSlug={templateSlug}
+        variant="template"
       />
     </div>
   );

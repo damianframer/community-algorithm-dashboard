@@ -9,7 +9,7 @@ export default function HistoryPage() {
         historyHref="/history"
         isHistoryActive
       />
-      <TemplatesHistoryWorkspace />
+      <TemplatesHistoryWorkspace variant="template" />
     </div>
   );
 }

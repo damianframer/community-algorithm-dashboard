@@ -10,8 +10,6 @@ import {
   formatScore,
   getScoreBreakdown,
   getTemplateDisplayScore,
-  getTemplatePipelineSnapshot,
-  getTemplatesForDisplay,
   MAX_TEMPLATE_DISPLAY_COUNT,
   type TemplatePipelineSnapshot,
   type RankedTemplate,
@@ -19,6 +17,7 @@ import {
   type RankingSettings,
   type TemplateSeed,
 } from "@/features/templates/lib/template-ranking";
+import type { TemplateWorkspaceDisplayMode } from "@/features/templates/lib/template-workspace-config";
 
 type FilterOption<T extends string> = {
   label: string;
@@ -51,7 +50,7 @@ const templateStatsLabels: {
   { label: "Conversions", key: "conversions" },
 ];
 
-const templateDetailStatsLabels: {
+const rankingTemplateStatsLabels: {
   key: keyof RankedTemplateStats;
   label: string;
 }[] = [
@@ -59,7 +58,7 @@ const templateDetailStatsLabels: {
   { label: "Previews", key: "previews" },
   { label: "Remixes", key: "remixes" },
   { label: "Active Sites", key: "activeSites" },
-  { label: "Conversions", key: "conversions" },
+  { label: "Conversion Rate", key: "conversionRate" },
 ];
 
 type DetailStatsFilterValue = "week" | "month";
@@ -70,11 +69,14 @@ const detailStatsFilterOptions: FilterOption<DetailStatsFilterValue>[] = [
 ];
 
 type TemplatesContentProps = {
+  displayMode?: TemplateWorkspaceDisplayMode;
   getTemplateHref: (template: RankedTemplate) => string;
   isLoading?: boolean;
   searchQuery: string;
   pricingFilter: TemplatePricingFilterValue;
   statsFilter: StatsFilterValue;
+  displayTemplates: RankedTemplate[];
+  pipelineSnapshots: ReadonlyMap<string, TemplatePipelineSnapshot>;
   positionChanges: ReadonlyMap<string, PositionChange>;
   rankedTemplates: RankedTemplate[];
   rankingSettings: RankingSettings;
@@ -257,22 +259,99 @@ function formatDataValue(value: boolean | number | string | null | undefined) {
   return value;
 }
 
+function getStatsLabels(displayMode: TemplateWorkspaceDisplayMode) {
+  return displayMode === "ranking"
+    ? rankingTemplateStatsLabels
+    : templateStatsLabels;
+}
+
+function formatStatValue(
+  key: keyof RankedTemplateStats,
+  value: number,
+) {
+  return key === "conversionRate"
+    ? formatScore(value)
+    : formatMetricValue(value);
+}
+
 function getDetailRows(
   template: RankedTemplate,
   rankingSettings: RankingSettings,
   today: Date | null,
+  displayMode: TemplateWorkspaceDisplayMode,
 ): DetailStatRow[] {
   const approvalDate = today
     ? formatDateFromBaseDate(today, -template.ageDays)
     : "--.--.----";
+  const isPaid = template.pricingType === "paid";
+
+  if (displayMode === "ranking") {
+    const isInsideFreshnessWindow =
+      rankingSettings.agePriorityWindowDays > 0 &&
+      template.ageDays <= rankingSettings.agePriorityWindowDays;
+    const freshnessWindowExpirationDate = today
+      ? formatDateFromBaseDate(
+          today,
+          rankingSettings.agePriorityWindowDays - template.ageDays,
+        )
+      : "--.--.----";
+
+    return [
+      { label: "Approval Date", value: approvalDate },
+      { label: "Template Age", value: `${template.ageDays}d` },
+      { label: "Is Paid", value: isPaid ? "Yes" : "No" },
+      {
+        label: "Template Price",
+        value: isPaid ? template.pricingLabel : "-",
+      },
+      {
+        label: "New User Activations",
+        value: String(template.stats.month.newUserActivations),
+      },
+      {
+        label: "Inside Freshness Window",
+        value: isInsideFreshnessWindow ? "Yes" : "No",
+      },
+      {
+        label: "Freshness Window Expiration Date",
+        value: freshnessWindowExpirationDate,
+      },
+      {
+        label: "Top-300 Exposure Days (30d)",
+        value: String(template.exposureStats?.top300ExposureDays30 ?? 0),
+      },
+      {
+        label: "Weighted Exposure (30d)",
+        value: String(template.exposureStats?.weightedExposure30 ?? 0),
+      },
+      {
+        label: "Top-48 Streak Days",
+        value: String(template.exposureStats?.top48StreakDays ?? 0),
+      },
+      {
+        label: "Avg Position Move (14d)",
+        value: formatDataValue(template.exposureStats?.avgAbsPositionChange14 ?? 0),
+      },
+      {
+        label: "Exploration Eligible",
+        value:
+          template.exposureStats?.explorationEligible ??
+          template.explorationCandidate
+            ? "Yes"
+            : "No",
+      },
+    ];
+  }
+
   const freshBoostExpirationDate = today
     ? formatDateFromBaseDate(
         today,
         rankingSettings.freshBoostDuration - template.ageDays,
       )
     : "--.--.----";
-  const hasFreshBoost = template.ageDays <= rankingSettings.freshBoostDuration;
-  const isPaid = template.pricingType === "paid";
+  const hasFreshBoost =
+    template.ageDays <= rankingSettings.freshBoostDuration &&
+    (rankingSettings.freshTemplateBoost > 0 || rankingSettings.freshBoostMultiplier > 1);
 
   return [
     { label: "Approval Date", value: approvalDate },
@@ -309,7 +388,43 @@ function getPipelineRows(
   template: RankedTemplate,
   rankingSettings: RankingSettings,
   pipelineSnapshot: TemplatePipelineSnapshot | null,
+  displayMode: TemplateWorkspaceDisplayMode,
 ): DetailStatRow[] {
+  if (displayMode === "ranking") {
+    return [
+      { label: "Base Ranking Score", value: formatScore(template.rankingScore) },
+      { label: "Display Score", value: formatScore(getTemplateDisplayScore(template)) },
+      {
+        label: "Display Multiplier",
+        value:
+          pipelineSnapshot?.rotationMultiplier === null ||
+          pipelineSnapshot?.rotationMultiplier === undefined
+            ? "-"
+            : pipelineSnapshot.rotationMultiplier.toFixed(2),
+      },
+      {
+        label: "Exploration Eligible",
+        value: pipelineSnapshot?.agePriorityCandidate ? "Yes" : "No",
+      },
+      {
+        label: "Reserved Exploration Slot",
+        value: pipelineSnapshot?.reservedAgePriorityApplied ? "Yes" : "No",
+      },
+      {
+        label: "Reserved Exploration Share",
+        value: `${rankingSettings.agePriorityReservedShare}%`,
+      },
+      {
+        label: "Display Position",
+        value:
+          pipelineSnapshot?.displayPosition === null ||
+          pipelineSnapshot?.displayPosition === undefined
+            ? "-"
+            : `#${String(pipelineSnapshot.displayPosition + 1)}`,
+      },
+    ];
+  }
+
   return [
     { label: "Base Ranking Score", value: formatScore(template.rankingScore) },
     { label: "Final Spotlight Score", value: formatScore(template.finalScore) },
@@ -368,6 +483,12 @@ function getTemplateDataRows(
   const quarter = templateSeed?.quarter;
 
   return [
+    {
+      label: "Template ID",
+      value: formatDataValue(templateSeed?.templateId ?? template.templateId),
+      usedBy: "Stable identity for history joins and pipeline tracking",
+      source: "template_stats.id",
+    },
     {
       label: "Title",
       value: template.name,
@@ -495,22 +616,56 @@ function getTemplateDataRows(
       source: "template_stats.active_sites_all_time",
     },
     {
+      label: "7d Conversion Rate",
+      value: formatDataValue(
+        templateSeed?.conversionRates?.week ?? template.stats.week.conversionRate,
+      ),
+      usedBy: "Native conversion rate scoring",
+      source: "template_stats.conversion_rate_l7",
+    },
+    {
+      label: "30d Conversion Rate",
+      value: formatDataValue(
+        templateSeed?.conversionRates?.month ?? template.stats.month.conversionRate,
+      ),
+      usedBy: "Native conversion rate scoring",
+      source: "template_stats.conversion_rate_l30",
+    },
+    {
+      label: "90d Conversion Rate",
+      value: formatDataValue(
+        templateSeed?.conversionRates?.quarter ??
+          templateSeed?.lifetime?.conversionRate,
+      ),
+      usedBy: "90d lookback and lifetime blend",
+      source: "template_stats.conversion_rate_l90",
+    },
+    {
+      label: "All-time Conversion Rate",
+      value: formatDataValue(
+        templateSeed?.conversionRates?.lifetime ??
+          templateSeed?.lifetime?.conversionRate,
+      ),
+      usedBy: "Used when Lifetime source is set to all-time",
+      source: "template_stats.conversion_rate_all_time",
+    },
+    {
       label: "7d Conversions",
       value: formatDataValue(templateSeed?.week[3] ?? template.stats.week.conversions),
-      usedBy: "Conversion, conversion rate, and revenue scoring",
-      source: "Not in BigQuery yet",
+      usedBy: "Estimated conversion counts for conversion-count and revenue scoring",
+      source: "Derived locally; not a native BigQuery field",
     },
     {
       label: "30d Conversions",
       value: formatDataValue(templateSeed?.month[3] ?? template.stats.month.conversions),
-      usedBy: "Conversion, conversion rate, and revenue scoring",
-      source: "Not in BigQuery yet",
+      usedBy: "Estimated conversion counts for conversion-count and revenue scoring",
+      source: "Derived locally; not a native BigQuery field",
     },
     {
       label: "90d Conversions",
       value: formatDataValue(quarter?.[3]),
-      usedBy: "90d lookback and lifetime blend",
-      source: "Not in BigQuery yet",
+      usedBy: "Estimated conversion counts for 90d lookback and lifetime blend",
+      source: "Derived locally; not a native BigQuery field",
     },
     {
       label: "All-time Conversions",
@@ -527,55 +682,68 @@ function getTemplateDataRows(
     {
       label: "Currently in Spotlight",
       value: formatDataValue(template.isCurrentlyTrending),
-      usedBy: "Spotlight lifecycle eligibility",
-      source: "Not in BigQuery yet",
+      usedBy: "Legacy Spotlight proxy only; not used by the current anti-dominance model",
+      source: "Derived locally",
     },
     {
       label: "Days in Spotlight",
       value: formatDataValue(template.daysInTrending),
-      usedBy: "Duration decay and max days",
-      source: "Not in BigQuery yet",
+      usedBy: "Legacy Spotlight proxy only; not used by the current anti-dominance model",
+      source: "Derived locally",
     },
     {
       label: "Days Since Last in Spotlight",
       value: formatDataValue(
         template.isCurrentlyTrending ? null : templateSeed?.daysSinceLastTrending,
       ),
-      usedBy: "Spotlight cooldown",
-      source: "Not in BigQuery yet",
+      usedBy: "Legacy Spotlight proxy only; not used by the current anti-dominance model",
+      source: "Derived locally",
     },
     {
-      label: "Spotlight Feature Count (30d)",
+      label: "Top-300 Exposure Days (30d)",
       value: formatDataValue(
-        templateSeed?.trendingFeatureCounts?.last30Days ??
-          template.trendingFeatureCounts.last30Days,
+        templateSeed?.exposureStats?.top300ExposureDays30 ??
+          template.exposureStats?.top300ExposureDays30,
       ),
-      usedBy: "Repeat feature decay when window is 30d",
-      source: "Not in BigQuery yet",
+      usedBy: "Primary exposure history signal for the current anti-dominance model",
+      source: "Ranking history snapshots",
     },
     {
-      label: "Spotlight Feature Count (90d)",
+      label: "Weighted Exposure (30d)",
       value: formatDataValue(
-        templateSeed?.trendingFeatureCounts?.last90Days ??
-          template.trendingFeatureCounts.last90Days,
+        templateSeed?.exposureStats?.weightedExposure30 ??
+          template.exposureStats?.weightedExposure30,
       ),
-      usedBy: "Repeat feature decay when window is 90d",
-      source: "Not in BigQuery yet",
+      usedBy: "Exposure decay in the current anti-dominance model",
+      source: "Ranking history snapshots",
     },
     {
-      label: "Spotlight Feature Count (Lifetime)",
+      label: "Top-48 Streak Days",
       value: formatDataValue(
-        templateSeed?.trendingFeatureCounts?.lifetime ??
-          template.trendingFeatureCounts.lifetime,
+        templateSeed?.exposureStats?.top48StreakDays ??
+          template.exposureStats?.top48StreakDays,
       ),
-      usedBy: "Reference count for historical Spotlight exposure",
-      source: "Not in BigQuery yet",
+      usedBy: "Top-row streak decay in the current anti-dominance model",
+      source: "Ranking history snapshots",
     },
     {
-      label: "Exploration Candidate",
-      value: formatDataValue(template.explorationCandidate),
-      usedBy: "Reserved Spotlight slots",
-      source: "Not in BigQuery yet",
+      label: "Avg Position Move (14d)",
+      value: formatDataValue(
+        templateSeed?.exposureStats?.avgAbsPositionChange14 ??
+          template.exposureStats?.avgAbsPositionChange14,
+      ),
+      usedBy: "Stability penalty in the current anti-dominance model",
+      source: "Ranking history snapshots",
+    },
+    {
+      label: "Exploration Eligible",
+      value: formatDataValue(
+        templateSeed?.exposureStats?.explorationEligible ??
+          template.exposureStats?.explorationEligible ??
+          template.explorationCandidate,
+      ),
+      usedBy: "Reserved exploration slots in the first 48 displayed positions",
+      source: "Derived from snapshot history plus age <= 45d",
     },
     {
       label: "Admin Override",
@@ -594,12 +762,14 @@ function TemplateDetailView({
   template,
   rankingSettings,
   pipelineSnapshot,
+  displayMode = "marketplace",
 }: {
   scoreBreakdownSeeds?: TemplateSeed[];
   templateSeed?: TemplateSeed | null;
   template: RankedTemplate;
   rankingSettings: RankingSettings;
   pipelineSnapshot: TemplatePipelineSnapshot | null;
+  displayMode?: TemplateWorkspaceDisplayMode;
 }) {
   const [detailStatsFilter, setDetailStatsFilter] =
     useState<DetailStatsFilterValue>("week");
@@ -617,11 +787,17 @@ function TemplateDetailView({
     setToday(new Date());
   }, []);
 
-  const detailRows = getDetailRows(template, rankingSettings, today);
+  const detailRows = getDetailRows(
+    template,
+    rankingSettings,
+    today,
+    displayMode,
+  );
   const pipelineRows = getPipelineRows(
     template,
     rankingSettings,
     pipelineSnapshot,
+    displayMode,
   );
   const dataRows = getTemplateDataRows(template, templateSeed);
 
@@ -654,16 +830,13 @@ function TemplateDetailView({
                 <span className="detailStatsName">{template.name}</span>
                 <div className="templateBadges">
                   <span className="templateBadge muted">{template.pricingLabel}</span>
-                    <span className="templateBadge">
-                      {formatScore(getTemplateDisplayScore(template))} Score
-                    </span>
-                  </div>
                 </div>
-              {templateDetailStatsLabels.map((stat) => (
+              </div>
+              {getStatsLabels(displayMode).map((stat) => (
                 <div key={stat.key} className="detailStatRow">
                   <span className="detailStatLabel">{stat.label}</span>
                   <span className="detailStatValue">
-                    {formatMetricValue(stats[stat.key])}
+                    {formatStatValue(stat.key, stats[stat.key])}
                   </span>
                 </div>
               ))}
@@ -770,10 +943,13 @@ const PAGE_SIZE = 48;
 const LOADING_CARD_COUNT = 6;
 
 export function TemplatesContent({
+  displayMode = "marketplace",
+  displayTemplates: baseDisplayTemplates,
   getTemplateHref,
   isLoading = false,
   onPricingFilterChange,
   onStatsFilterChange,
+  pipelineSnapshots,
   pricingFilter,
   positionChanges,
   rankedTemplates: allRankedTemplates,
@@ -791,9 +967,15 @@ export function TemplatesContent({
       : allRankedTemplates.filter(
           (template) => template.pricingType === pricingFilter,
         );
+  const displayTemplates =
+    pricingFilter === "all"
+      ? baseDisplayTemplates
+      : baseDisplayTemplates.filter(
+          (template) => template.pricingType === pricingFilter,
+        );
   const visibleTemplates = useMemo(() =>
     deferredSearchQuery.trim()
-      ? rankedTemplates
+        ? rankedTemplates
           .map((template) => ({
             searchScore: getTemplateMatchScore(template, deferredSearchQuery),
             template,
@@ -807,8 +989,8 @@ export function TemplatesContent({
           )
           .map(({ template }) => template)
           .slice(0, MAX_TEMPLATE_DISPLAY_COUNT)
-      : getTemplatesForDisplay(rankedTemplates, rankingSettings),
-    [deferredSearchQuery, rankedTemplates, rankingSettings],
+      : displayTemplates,
+    [deferredSearchQuery, displayTemplates, rankedTemplates],
   );
   const [pageCount, setPageCount] = useState(1);
 
@@ -826,14 +1008,13 @@ export function TemplatesContent({
     const freshTemplate =
       allRankedTemplates.find((t) => t.name === selectedTemplate.name);
     const templateSeed = scoreBreakdownSeeds?.find(
-      (seed) => seed.name === selectedTemplate.name,
+      (seed) =>
+        (selectedTemplate.templateId !== undefined &&
+          seed.templateId === selectedTemplate.templateId) ||
+        seed.name === selectedTemplate.name,
     );
     const resolvedTemplate = freshTemplate ?? selectedTemplate;
-    const pipelineSnapshot = getTemplatePipelineSnapshot(
-      allRankedTemplates,
-      rankingSettings,
-      resolvedTemplate.name,
-    );
+    const pipelineSnapshot = pipelineSnapshots.get(resolvedTemplate.name) ?? null;
     return (
       <TemplateDetailView
         pipelineSnapshot={pipelineSnapshot}
@@ -841,6 +1022,7 @@ export function TemplatesContent({
         templateSeed={templateSeed}
         template={resolvedTemplate}
         rankingSettings={rankingSettings}
+        displayMode={displayMode}
       />
     );
   }
@@ -923,18 +1105,15 @@ export function TemplatesContent({
 
                         <div className="templateBadges">
                           <span className="templateBadge muted">{template.pricingLabel}</span>
-                          <span className="templateBadge">
-                            {formatScore(getTemplateDisplayScore(template))} Score
-                          </span>
                         </div>
                       </div>
 
                       {stats
-                        ? templateStatsLabels.map((stat) => (
+                        ? getStatsLabels(displayMode).map((stat) => (
                             <div key={stat.key} className="templateStatRow">
                               <span className="templateStatLabel">{stat.label}</span>
                               <span className="templateStatValue">
-                                {formatMetricValue(stats[stat.key])}
+                                {formatStatValue(stat.key, stats[stat.key])}
                               </span>
                             </div>
                           ))

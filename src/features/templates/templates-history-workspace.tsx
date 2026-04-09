@@ -1,24 +1,36 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 import { createSidebarSettingsState } from "@/features/settings/lib/settings-state";
 import { TemplatesHistorySidebar } from "@/features/templates/components/templates-history-sidebar";
 import { TemplatesHistoryView } from "@/features/templates/components/templates-history-view";
-import { templatesSidebarSections } from "@/features/templates/lib/sidebar-settings";
+import {
+  getTemplateWorkspaceHomeHref,
+  getTemplateWorkspaceSidebarSections,
+  type TemplateWorkspaceVariant,
+} from "@/features/templates/lib/template-workspace-config";
 import { useTemplatesWorkspaceState } from "@/features/templates/lib/templates-workspace-state";
 import {
   getTemplateHistoryChangeDetails,
   type TemplateHistoryEntry,
 } from "@/features/templates/lib/templates-history";
 
-export function TemplatesHistoryWorkspace() {
+type TemplatesHistoryWorkspaceProps = {
+  variant?: TemplateWorkspaceVariant;
+};
+
+export function TemplatesHistoryWorkspace({
+  variant = "template",
+}: TemplatesHistoryWorkspaceProps) {
   const {
     currentHistoryEntryId,
     historyEntries,
     previewHistoryEntry,
     rollbackHistoryEntry,
   } = useTemplatesWorkspaceState();
+  const sections = getTemplateWorkspaceSidebarSections(variant);
+  const homeHref = getTemplateWorkspaceHomeHref(variant);
   const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -45,16 +57,27 @@ export function TemplatesHistoryWorkspace() {
   const previousEntry = selectedEntryIndex >= 0
     ? historyEntries[selectedEntryIndex + 1] ?? null
     : null;
-  const selectedEntryChangeDetails = selectedEntry
-    ? selectedEntry.changedDetails.length > 0
-      ? selectedEntry.changedDetails
-      : getTemplateHistoryChangeDetails(
-          previousEntry?.sidebarSettings ??
-            createSidebarSettingsState(templatesSidebarSections),
-          selectedEntry.sidebarSettings,
-          templatesSidebarSections,
-        )
-    : [];
+  const selectedEntryChangeDetails = useMemo(
+    () =>
+      selectedEntry
+        ? selectedEntry.changedDetails.length > 0
+          ? selectedEntry.changedDetails
+          : getTemplateHistoryChangeDetails(
+              previousEntry?.sidebarSettings ??
+                createSidebarSettingsState(sections),
+              selectedEntry.sidebarSettings,
+              sections,
+            )
+        : [],
+    [previousEntry?.sidebarSettings, sections, selectedEntry],
+  );
+  const touchedSections = useMemo(
+    () =>
+      Array.from(
+        new Set(selectedEntryChangeDetails.map((detail) => detail.section)),
+      ),
+    [selectedEntryChangeDetails],
+  );
 
   return (
     <>
@@ -66,10 +89,12 @@ export function TemplatesHistoryWorkspace() {
       />
       <TemplatesHistoryView
         changeDetails={selectedEntryChangeDetails}
+        homeHref={homeHref}
         isCurrentEntry={selectedEntry ? isCurrentEntry(selectedEntry) : false}
         onCheckVersion={previewHistoryEntry}
         onRollback={rollbackHistoryEntry}
         selectedEntry={selectedEntry}
+        touchedSections={touchedSections}
       />
     </>
   );

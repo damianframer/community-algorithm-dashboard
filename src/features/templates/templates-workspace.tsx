@@ -10,27 +10,30 @@ import {
 } from "@/features/templates/components/templates-content";
 import { TemplatesSidebar } from "@/features/templates/components/templates-sidebar";
 import {
-  getTemplateHref,
   getTemplateSlug,
 } from "@/features/templates/lib/template-paths";
 import {
-  annotateCurrentTrendingTemplates,
-  getRankingSettings,
-  getTemplatesForDisplay,
-  projectCurrentTrendingSeeds,
-  scoreTemplates,
-  type TemplateSeed,
-} from "@/features/templates/lib/template-ranking";
+  filterTemplateWorkspaceSeeds,
+  getTemplateWorkspaceDisplayMode,
+  getTemplateWorkspaceRankingSettings,
+  getTemplateWorkspaceSidebarSections,
+  getTemplateWorkspaceTemplateHref,
+  runTemplateWorkspacePipeline,
+  type TemplateWorkspaceVariant,
+} from "@/features/templates/lib/template-workspace-config";
+import { type TemplateSeed } from "@/features/templates/lib/template-ranking";
 import { useTemplatesWorkspaceState } from "@/features/templates/lib/templates-workspace-state";
 
 type TemplatesWorkspaceProps = {
   initialSeeds?: TemplateSeed[];
   selectedTemplateSlug?: string;
+  variant?: TemplateWorkspaceVariant;
 };
 
 export function TemplatesWorkspace({
   initialSeeds,
   selectedTemplateSlug,
+  variant = "template",
 }: TemplatesWorkspaceProps) {
   const [seeds, setSeeds] = useState<TemplateSeed[] | null>(initialSeeds ?? null);
   const isLoading = seeds === null;
@@ -68,62 +71,127 @@ export function TemplatesWorkspace({
     setStatsFilter,
   } = useTemplatesWorkspaceState();
 
-  const rankingSettings = getRankingSettings(sidebarSettings);
-  const savedRankingSettings = getRankingSettings(savedSidebarSettings);
+  const rankingSettings = getTemplateWorkspaceRankingSettings(
+    sidebarSettings,
+    variant,
+  );
+  const savedRankingSettings = getTemplateWorkspaceRankingSettings(
+    savedSidebarSettings,
+    variant,
+  );
+  const displayMode = getTemplateWorkspaceDisplayMode(variant);
+  const sidebarSections = getTemplateWorkspaceSidebarSections(variant);
   const isEditing = !areSidebarSettingsEqual(
     sidebarSettings,
     savedSidebarSettings,
   );
-  const rankingSeeds = useMemo(
+  const filteredSeeds = useMemo(
     () =>
       isLoading || !seeds
         ? []
-        : projectCurrentTrendingSeeds(seeds, rankingSettings),
-    [isLoading, rankingSettings, seeds],
+        : filterTemplateWorkspaceSeeds(seeds, sidebarSettings, variant),
+    [isLoading, seeds, sidebarSettings, variant],
   );
-  const savedRankingSeeds = useMemo(
+  const filteredSavedSeeds = useMemo(
     () =>
       isLoading || !seeds
         ? []
-        : projectCurrentTrendingSeeds(seeds, savedRankingSettings),
-    [isLoading, savedRankingSettings, seeds],
+        : filterTemplateWorkspaceSeeds(seeds, savedSidebarSettings, variant),
+    [isLoading, savedSidebarSettings, seeds, variant],
   );
-  const rankedTemplates = isLoading
-    ? []
-    : annotateCurrentTrendingTemplates(
-        scoreTemplates(rankingSettings, rankingSeeds),
-        rankingSettings,
-      );
-  const savedRankedTemplates = isLoading
-    ? []
-    : annotateCurrentTrendingTemplates(
-        scoreTemplates(savedRankingSettings, savedRankingSeeds),
-        savedRankingSettings,
-      );
-  const displayTemplates = getTemplatesForDisplay(rankedTemplates, rankingSettings);
-  const savedDisplayTemplates = getTemplatesForDisplay(
-    savedRankedTemplates,
-    savedRankingSettings,
+  const {
+    displayTemplates,
+    pipelineSnapshots,
+    rankedTemplates,
+    rankingSeeds,
+  } = useMemo(
+    () =>
+      isLoading
+        ? {
+            displayTemplates: [],
+            pipelineSnapshots: new Map(),
+            rankedTemplates: [],
+            rankingSeeds: [],
+          }
+        : runTemplateWorkspacePipeline(filteredSeeds, rankingSettings, variant),
+    [filteredSeeds, isLoading, rankingSettings, variant],
+  );
+  const savedPipeline = useMemo(
+    () =>
+      isLoading
+        ? {
+            displayTemplates: [],
+            pipelineSnapshots: new Map(),
+            rankedTemplates: [],
+            rankingSeeds: [],
+          }
+        : runTemplateWorkspacePipeline(
+            filteredSavedSeeds,
+            savedRankingSettings,
+            variant,
+          ),
+    [filteredSavedSeeds, isLoading, savedRankingSettings, variant],
+  );
+  const {
+    displayTemplates: savedDisplayTemplates,
+  } = savedPipeline;
+  const selectedTemplatePipeline = useMemo(
+    () =>
+      isLoading || !seeds || !selectedTemplateSlug
+        ? null
+        : runTemplateWorkspacePipeline(seeds, rankingSettings, variant),
+    [isLoading, rankingSettings, seeds, selectedTemplateSlug, variant],
   );
   const positionChanges = getPositionChanges(displayTemplates, savedDisplayTemplates);
   const selectedTemplate = selectedTemplateSlug
     ? rankedTemplates.find(
         (template) => getTemplateSlug(template.name) === selectedTemplateSlug,
-      ) ?? null
+      ) ??
+      selectedTemplatePipeline?.rankedTemplates.find(
+        (template) => getTemplateSlug(template.name) === selectedTemplateSlug,
+      ) ??
+      null
     : null;
+  const selectedTemplateInDisplayList = selectedTemplate
+    ? displayTemplates.some((template) => template.name === selectedTemplate.name)
+    : false;
+  const detailSidebarTemplates =
+    selectedTemplate && !selectedTemplateInDisplayList
+      ? [selectedTemplate, ...displayTemplates]
+      : displayTemplates;
+  const detailPipelineSnapshots =
+    selectedTemplate &&
+    !pipelineSnapshots.has(selectedTemplate.name) &&
+    selectedTemplatePipeline
+      ? selectedTemplatePipeline.pipelineSnapshots
+      : pipelineSnapshots;
+  const detailRankingSeeds =
+    selectedTemplate &&
+    !rankingSeeds.some(
+      (seed) =>
+        (selectedTemplate.templateId !== undefined &&
+          seed.templateId === selectedTemplate.templateId) ||
+        seed.name === selectedTemplate.name,
+    ) &&
+    selectedTemplatePipeline
+      ? selectedTemplatePipeline.rankingSeeds
+      : rankingSeeds;
 
   return (
     <>
       {selectedTemplate ? (
         <TemplateListSidebar
-          getTemplateHref={(template) => getTemplateHref(template.name)}
-          templates={displayTemplates}
+          getTemplateHref={(template) =>
+            getTemplateWorkspaceTemplateHref(template.name, variant)
+          }
+          templates={detailSidebarTemplates}
           selectedTemplateName={selectedTemplate.name}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
         />
       ) : (
         <TemplatesSidebar
+          sections={sidebarSections}
           searchQuery={searchQuery}
           onSearchChange={setSearchQuery}
           savedSettingsState={savedSidebarSettings}
@@ -134,14 +202,19 @@ export function TemplatesWorkspace({
         />
       )}
       <TemplatesContent
-        getTemplateHref={(template) => getTemplateHref(template.name)}
+        displayMode={displayMode}
+        getTemplateHref={(template) =>
+          getTemplateWorkspaceTemplateHref(template.name, variant)
+        }
         isLoading={isLoading}
         searchQuery={searchQuery}
         pricingFilter={pricingFilter}
         statsFilter={statsFilter}
+        displayTemplates={displayTemplates}
+        pipelineSnapshots={detailPipelineSnapshots}
         rankedTemplates={rankedTemplates}
         rankingSettings={rankingSettings}
-        scoreBreakdownSeeds={rankingSeeds}
+        scoreBreakdownSeeds={detailRankingSeeds}
         positionChanges={positionChanges}
         showPositionChanges={isEditing}
         selectedTemplate={selectedTemplate}

@@ -11,18 +11,22 @@ import {
 
 type TemplatesHistoryViewProps = {
   changeDetails: TemplateHistoryChangeDetail[];
+  homeHref: string;
   isCurrentEntry: boolean;
   onCheckVersion: (entryId: string) => void;
   onRollback: (entryId: string) => void;
   selectedEntry: TemplateHistoryEntry | null;
+  touchedSections: string[];
 };
 
 export function TemplatesHistoryView({
   changeDetails,
+  homeHref,
   isCurrentEntry,
   onCheckVersion,
   onRollback,
   selectedEntry,
+  touchedSections,
 }: TemplatesHistoryViewProps) {
   const router = useRouter();
   const [isRollbackModalOpen, setIsRollbackModalOpen] = useState(false);
@@ -35,8 +39,20 @@ export function TemplatesHistoryView({
     return (
       <section className="historyPane">
         <div className="historyShell">
-          <div className="historyDetailCard empty">
-            Save changes to create a history version.
+          <div className="historyDetailCard historyDetailEmptyState">
+            <div className="historyDetailEmptyStateCopy">
+              <h1 className="historyDetailTitle">No saved versions yet</h1>
+              <p className="historyDetailEmptyText">
+                Save changes from the ranking workspace to build a recoverable history.
+              </p>
+            </div>
+            <button
+              type="button"
+              className="historyDetailButton primary"
+              onClick={() => router.push(homeHref)}
+            >
+              Open Ranking
+            </button>
           </div>
         </div>
       </section>
@@ -49,7 +65,8 @@ export function TemplatesHistoryView({
         <div className="historyDetailCard">
           <div className="historyDetailTop">
             <div className="historyDetailTitleWrap">
-              <h1 className="historyDetailTitle">Ranking Changes</h1>
+              <span className="historyDetailEyebrow">Saved Version</span>
+              <h1 className="historyDetailTitle">{selectedEntry.title}</h1>
               <div className="historyDetailMeta">
                 <span>{formatTemplateHistoryTimestamp(selectedEntry.savedAt)}</span>
                 {isCurrentEntry ? <span className="historyDetailLiveText">Live</span> : null}
@@ -61,10 +78,10 @@ export function TemplatesHistoryView({
                 className="historyDetailButton"
                 onClick={() => {
                   onCheckVersion(selectedEntry.id);
-                  router.push("/");
+                  router.push(homeHref);
                 }}
               >
-                View Changes
+                Preview in Ranking
               </button>
               <button
                 type="button"
@@ -72,35 +89,54 @@ export function TemplatesHistoryView({
                 onClick={() => setIsRollbackModalOpen(true)}
                 disabled={isCurrentEntry}
               >
-                Rollback
+                Restore Live
               </button>
             </div>
           </div>
 
+          <div className="historySummaryGrid">
+            <div className="historySummaryCard">
+              <span className="historySummaryLabel">Changed Settings</span>
+              <strong className="historySummaryValue">{changeDetails.length}</strong>
+            </div>
+            <div className="historySummaryCard">
+              <span className="historySummaryLabel">Sections Touched</span>
+              <strong className="historySummaryValue">{touchedSections.length}</strong>
+            </div>
+            <div className="historySummaryCard">
+              <span className="historySummaryLabel">Status</span>
+              <strong className="historySummaryValue">
+                {isCurrentEntry ? "Live" : "Historical"}
+              </strong>
+            </div>
+          </div>
+
+          {touchedSections.length > 0 ? (
+            <div className="historySectionTags" aria-label="Sections touched">
+              {touchedSections.map((section) => (
+                <span key={section} className="historySectionTag">
+                  {section}
+                </span>
+              ))}
+            </div>
+          ) : null}
+
           <div className="historyChangesTable" role="table" aria-label="Ranking changes">
             <div className="historyChangesHeader" role="row">
               <span className="historyChangesHeading" role="columnheader">
-                Name
+                Setting
               </span>
               <span className="historyChangesHeading value" role="columnheader">
-                Old Value
+                Previous
               </span>
               <span className="historyChangesHeading value" role="columnheader">
-                New Value
+                Saved
               </span>
             </div>
 
             {changeDetails.length === 0 ? (
-              <div className="historyChangesRow empty" role="row">
-                <span className="historyChangesCell" role="cell">
-                  {selectedEntry.title}
-                </span>
-                <span className="historyChangesCell value" role="cell">
-                  -
-                </span>
-                <span className="historyChangesCell value" role="cell">
-                  -
-                </span>
+              <div className="historyChangesEmpty" role="note">
+                This version was saved without any setting value changes.
               </div>
             ) : (
               changeDetails.map((detail) => (
@@ -109,8 +145,12 @@ export function TemplatesHistoryView({
                   className="historyChangesRow"
                   role="row"
                 >
-                  <span className="historyChangesCell" role="cell">
-                    {detail.section} / {detail.label}
+                  <span
+                    className="historyChangesCell historyChangesSettingCell"
+                    role="cell"
+                  >
+                    <span className="historySectionTag subtle">{detail.section}</span>
+                    <span className="historyChangesSettingLabel">{detail.label}</span>
                   </span>
                   <span className="historyChangesCell value" role="cell">
                     {detail.from}

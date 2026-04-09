@@ -23,7 +23,9 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body className={inter.className}>
-        <TemplatesWorkspaceStateProvider>{children}</TemplatesWorkspaceStateProvider>
+        <TemplatesWorkspaceStateProvider variant="template">
+          {children}
+        </TemplatesWorkspaceStateProvider>
       </body>
     </html>
   );

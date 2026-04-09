@@ -67,6 +67,7 @@ function HistoryIcon() {
 
 type TopbarProps = {
   activeCategory: MarketplaceCategory;
+  homeHref?: string;
   historyHref?: string;
   isHistoryActive?: boolean;
 };
@@ -81,12 +82,13 @@ const categoryHrefs: Partial<Record<MarketplaceCategory, string>> = {
 
 export function Topbar({
   activeCategory,
+  homeHref = "/",
   historyHref,
   isHistoryActive = false,
 }: TopbarProps) {
   return (
     <header className="topbar">
-      <Link className="logoWrap" href="/">
+      <Link className="logoWrap" href={homeHref}>
         <div className="logoLockup">
           <CommunityMark />
           <span className="logoLabel">Community Algorithm</span>
