@@ -1089,6 +1089,62 @@ button {
   padding: 0;
 }
 
+.historySidebarHeader {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 24px 24px 18px;
+  border-bottom: 1px solid #252525;
+}
+
+.historySidebarEyebrow,
+.historyDetailEyebrow {
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #777777;
+}
+
+.historySidebarHeaderRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.historySidebarTitle {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 500;
+  line-height: 26px;
+  color: #ffffff;
+}
+
+.historySidebarCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 30px;
+  height: 30px;
+  padding: 0 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d7d7d7;
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 15px;
+}
+
+.historySidebarDescription {
+  margin: 0;
+  color: #8d8d8d;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
+}
+
 .historyShell {
   min-height: 100%;
   padding: 56px;
@@ -1098,34 +1154,64 @@ button {
   display: flex;
   flex-direction: column;
   width: 100%;
-  padding: 16px 12px;
-  gap: 0;
+  padding: 14px 12px;
+  gap: 6px;
 }
 
 .historySidebarRow {
   display: flex;
   align-items: center;
-  justify-content: space-between;
   width: 100%;
-  min-height: 48px;
+  min-height: 72px;
   padding: 0 12px;
   border-radius: 10px;
+  border: 1px solid transparent;
+  transition:
+    border-color 140ms ease,
+    background-color 140ms ease;
 }
 
 .historySidebarRow.active {
+  border-color: rgba(255, 255, 255, 0.09);
   background: rgba(255, 255, 255, 0.05);
 }
 
 .historySidebarRowButton {
   display: inline-flex;
-  align-items: center;
+  align-items: flex-start;
   flex: 1;
-  min-height: 48px;
+  min-height: 72px;
   padding: 14px 0;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
+}
+
+.historySidebarRowContent {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.historySidebarRowTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.historySidebarEntryTitle {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  color: #f2f2f2;
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 17px;
 }
 
 .historySidebarDate {
@@ -1135,22 +1221,30 @@ button {
   color: #999999;
 }
 
+.historySidebarRowMeta {
+  color: #767676;
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 14px;
+}
+
 .historyLiveBadge {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  height: 19px;
-  padding: 2px 6px;
+  height: 22px;
+  padding: 2px 8px;
   border-radius: 40px;
   background: #009cff;
   color: #ffffff;
-  font-size: 12px;
+  font-size: 11px;
   font-weight: 600;
-  line-height: 15px;
+  line-height: 14px;
+  letter-spacing: 0.03em;
 }
 
 .historySidebarEmpty {
-  padding: 16px 12px;
+  padding: 16px 12px 0;
   color: #999999;
   font-size: 12px;
   font-weight: 500;
@@ -1163,12 +1257,32 @@ button {
   margin: 0 auto;
 }
 
-.historyDetailCard.empty {
-  padding: 20px 0;
+.historyDetailEmptyState {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 24px;
+  padding: 28px 32px;
+  border: 1px solid #252525;
+  border-radius: 20px;
+  background:
+    radial-gradient(circle at top right, rgba(0, 156, 255, 0.12), transparent 30%),
+    #121212;
+}
+
+.historyDetailEmptyStateCopy {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  max-width: 460px;
+}
+
+.historyDetailEmptyText {
+  margin: 0;
   color: #999999;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
-  line-height: 15px;
+  line-height: 20px;
 }
 
 .historyDetailTop {
@@ -1177,13 +1291,13 @@ button {
   justify-content: space-between;
   gap: 10px;
   width: 100%;
-  margin-bottom: 36px;
+  margin-bottom: 24px;
 }
 
 .historyDetailTitleWrap {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: 8px;
 }
 
 .historyDetailTitle {
@@ -1209,8 +1323,7 @@ button {
 }
 
 .historyDetailLiveText {
-  color: #ffffff;
-  opacity: 0.6;
+  color: #8ecfff;
 }
 
 .historyDetailActions {
@@ -1223,11 +1336,11 @@ button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 107px;
-  height: 32px;
-  padding: 0 12px;
+  min-width: 120px;
+  height: 36px;
+  padding: 0 14px;
   border: 0;
-  border-radius: 8px;
+  border-radius: 10px;
   background: #1f1f1f;
   color: #ffffff;
   font-size: 12px;
@@ -1242,6 +1355,66 @@ button {
 .historyDetailButton:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.historySummaryGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.historySummaryCard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 16px 18px;
+  border: 1px solid #252525;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.02);
+}
+
+.historySummaryLabel {
+  color: #777777;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.historySummaryValue {
+  color: #ffffff;
+  font-size: 20px;
+  font-weight: 500;
+  line-height: 24px;
+}
+
+.historySectionTags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 18px;
+}
+
+.historySectionTag {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 26px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #d8d8d8;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 14px;
+}
+
+.historySectionTag.subtle {
+  align-self: flex-start;
+  background: rgba(255, 255, 255, 0.04);
+  color: #a4a4a4;
 }
 
 .historyChangesTable {
@@ -1274,9 +1447,29 @@ button {
   color: #999999;
 }
 
+.historyChangesSettingCell {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.historyChangesSettingLabel {
+  color: #ffffff;
+}
+
 .historyChangesHeading.value,
 .historyChangesCell.value {
   text-align: right;
+}
+
+.historyChangesEmpty {
+  padding: 18px 0;
+  border-top: 1px solid #252525;
+  color: #999999;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 18px;
 }
 
 .historyModalOverlay {
@@ -1633,6 +1826,11 @@ button {
     padding: 28px 20px 40px;
   }
 
+  .historyDetailEmptyState {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .historyDetailTop {
     align-items: flex-start;
     flex-direction: column;
@@ -1640,6 +1838,10 @@ button {
 
   .historyDetailActions {
     width: 100%;
+  }
+
+  .historySummaryGrid {
+    grid-template-columns: 1fr;
   }
 
   .historyDetailButton {

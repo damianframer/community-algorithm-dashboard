@@ -5,11 +5,12 @@ import { useState } from "react";
 import { SettingsInputGroup } from "@/features/settings/components/setting-controls";
 import {
   areSidebarSettingsEqual,
+  type SettingSection,
   type SidebarSettingsState,
 } from "@/features/settings/lib/settings-state";
-import { templatesSidebarSections } from "@/features/templates/lib/sidebar-settings";
 
 type TemplatesSidebarProps = {
+  sections: SettingSection[];
   savedSettingsState: SidebarSettingsState;
   settingsState: SidebarSettingsState;
   searchQuery: string;
@@ -40,6 +41,7 @@ function SidebarArrow() {
 }
 
 export function TemplatesSidebar({
+  sections,
   savedSettingsState,
   settingsState,
   onResetSettings,
@@ -50,7 +52,7 @@ export function TemplatesSidebar({
 }: TemplatesSidebarProps) {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>(() =>
     Object.fromEntries(
-      templatesSidebarSections.map((section) => [section.title, !!section.defaultOpen]),
+      sections.map((section) => [section.title, !!section.defaultOpen]),
     ),
   );
   const isDirty = !areSidebarSettingsEqual(settingsState, savedSettingsState);
@@ -69,7 +71,7 @@ export function TemplatesSidebar({
       </div>
 
       <div className="settingRows">
-        {templatesSidebarSections.map((row) => {
+        {sections.map((row) => {
           const isOpen = openSections[row.title];
 
           return (

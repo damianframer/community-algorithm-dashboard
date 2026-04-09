@@ -15,6 +15,16 @@ export function TemplatesHistorySidebar({
 }: TemplatesHistorySidebarProps) {
   return (
     <aside className="sidebar historySidebar" aria-label="Templates history versions">
+      <div className="historySidebarHeader">
+        <span className="historySidebarEyebrow">Template Ranking</span>
+        <div className="historySidebarHeaderRow">
+          <h1 className="historySidebarTitle">History</h1>
+          <span className="historySidebarCount">{historyEntries.length}</span>
+        </div>
+        <p className="historySidebarDescription">
+          Saved snapshots of the ranking controls that can be previewed or restored.
+        </p>
+      </div>
       <div className="historySidebarRows">
         {historyEntries.length === 0 ? (
           <div className="historySidebarEmpty">No saved versions yet.</div>
@@ -35,13 +45,24 @@ export function TemplatesHistorySidebar({
                 <button
                   type="button"
                   className="historySidebarRowButton"
+                  aria-pressed={isSelected}
                   onClick={() => onSelectEntry(entry.id)}
                 >
-                  <span className="historySidebarDate">
-                    {formatTemplateHistoryDate(entry.savedAt)}
-                  </span>
+                  <div className="historySidebarRowContent">
+                    <div className="historySidebarRowTop">
+                      <span className="historySidebarEntryTitle">{entry.title}</span>
+                      {isCurrent ? <span className="historyLiveBadge">LIVE</span> : null}
+                    </div>
+                    <span className="historySidebarDate">
+                      {formatTemplateHistoryDate(entry.savedAt)}
+                    </span>
+                    <span className="historySidebarRowMeta">
+                      {entry.changedSettings.length === 1
+                        ? "1 setting changed"
+                        : `${entry.changedSettings.length} settings changed`}
+                    </span>
+                  </div>
                 </button>
-                {isCurrent ? <span className="historyLiveBadge">LIVE</span> : null}
               </div>
             );
           })

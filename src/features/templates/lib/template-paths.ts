@@ -6,6 +6,15 @@ export function getTemplateSlug(templateName: string) {
     .replace(/^-+|-+$/g, "");
 }
 
+export function getScopedTemplateHref(templateName: string, basePath = "") {
+  const normalizedBasePath =
+    basePath === "" || basePath === "/"
+      ? ""
+      : `/${basePath.replace(/^\/+|\/+$/g, "")}`;
+
+  return `${normalizedBasePath}/${getTemplateSlug(templateName)}`;
+}
+
 export function getTemplateHref(templateName: string) {
-  return `/${getTemplateSlug(templateName)}`;
+  return getScopedTemplateHref(templateName);
 }

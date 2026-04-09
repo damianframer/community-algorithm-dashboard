@@ -21,13 +21,21 @@ type ActiveSitesByWindow = {
   week: number;
 };
 
+type ConversionRatesByWindow = {
+  lifetime: number;
+  month: number;
+  quarter?: number;
+  week: number;
+};
+
 type LifetimeSeedMetrics = Pick<
   RankingMetricSet,
-  "views" | "previews" | "remixes" | "activeSites" | "conversions"
+  "views" | "previews" | "remixes" | "activeSites" | "conversions" | "conversionRate"
 >;
 
 export type RankingMetricSet = {
   activeSites: number;
+  conversionRate: number;
   conversions: number;
   newUserActivations: number;
   previews: number;
@@ -42,14 +50,24 @@ export type TrendingFeatureCounts = {
   lifetime: number;
 };
 
+export type TemplateExposureStats = {
+  avgAbsPositionChange14: number;
+  explorationEligible: boolean;
+  top48StreakDays: number;
+  top300ExposureDays30: number;
+  weightedExposure30: number;
+};
+
 export type TemplateSeed = {
   activeSites?: ActiveSitesByWindow;
   adminOverride: TemplateOverride;
   ageDays: number;
   category: string;
+  conversionRates?: ConversionRatesByWindow;
   creator: string;
   daysInTrending: number;
   daysSinceLastTrending: number | null;
+  exposureStats?: TemplateExposureStats;
   explorationCandidate: boolean;
   isCurrentlyTrending: boolean;
   manualTrendingDays?: number;
@@ -61,6 +79,7 @@ export type TemplateSeed = {
   pricingType: TemplatePricingType;
   quarter?: MetricTuple;
   revenuePerConversion: number;
+  templateId?: number;
   thumbnailUrl?: string;
   trendingFeatureCounts?: TrendingFeatureCounts;
   lifetime?: LifetimeSeedMetrics;
@@ -70,7 +89,7 @@ export type TemplateSeed = {
 
 export type RankedTemplateStats = Pick<
   RankingMetricSet,
-  "views" | "previews" | "remixes" | "activeSites" | "conversions"
+  "views" | "previews" | "remixes" | "activeSites" | "conversionRate" | "conversions"
 > & {
   revenue: number;
   newUserActivations: number;
@@ -78,10 +97,12 @@ export type RankedTemplateStats = Pick<
 
 export type RankedTemplate = {
   adminOverride: TemplateOverride;
+  antiDominanceMultiplier?: number;
   ageDays: number;
   category: string;
   creator: string;
   daysInTrending: number;
+  exposureStats?: TemplateExposureStats;
   feedIneligibilityLabel: string | null;
   isCurrentlyTrending: boolean;
   isFeedEligible: boolean;
@@ -96,6 +117,7 @@ export type RankedTemplate = {
   pricingLabel: string;
   pricingType: TemplatePricingType;
   stats: Record<StatsRange, RankedTemplateStats>;
+  templateId?: number;
   trendingFeatureCounts: TrendingFeatureCounts;
 };
 
@@ -104,8 +126,12 @@ export const MAX_TEMPLATE_DISPLAY_COUNT = 400;
 export type RankingSettings = {
   activeSiteRateWeight: number;
   activeSitesWeight: number;
+  antiDominanceExposureDecayRate?: number;
+  antiDominanceExposureThreshold?: number;
+  antiDominanceTop48StreakThreshold?: number;
   agePriorityBoost: number;
   agePriorityReservedShare: number;
+  reservedShareWindowSize: number;
   agePriorityWindowDays: number;
   categoryCap: number;
   cooldown: number;
@@ -206,6 +232,16 @@ const defaultFeedThumbnailNames = [
 const defaultFeedThumbnailAssignments = new Map<string, string>(
   defaultFeedThumbnailNames.map((name, index) => [name, templateThumbnailUrls[index]]),
 );
+
+function hashString(input: string) {
+  let hash = 0;
+
+  for (let index = 0; index < input.length; index += 1) {
+    hash = (hash * 31 + input.charCodeAt(index)) >>> 0;
+  }
+
+  return hash;
+}
 
 const templateSeeds: TemplateSeed[] = [
   {
@@ -666,6 +702,26 @@ const templateSeeds: TemplateSeed[] = [
   },
 ];
 
+function cloneTemplateSeed(seed: TemplateSeed): TemplateSeed {
+  return {
+    ...seed,
+    activeSites: seed.activeSites ? { ...seed.activeSites } : undefined,
+    conversionRates: seed.conversionRates ? { ...seed.conversionRates } : undefined,
+    exposureStats: seed.exposureStats ? { ...seed.exposureStats } : undefined,
+    lifetime: seed.lifetime ? { ...seed.lifetime } : undefined,
+    month: [...seed.month],
+    quarter: seed.quarter ? [...seed.quarter] : undefined,
+    trendingFeatureCounts: seed.trendingFeatureCounts
+      ? { ...seed.trendingFeatureCounts }
+      : undefined,
+    week: [...seed.week],
+  };
+}
+
+export function getDefaultTemplateSeeds(): TemplateSeed[] {
+  return templateSeeds.map(cloneTemplateSeed);
+}
+
 function roundMetricValue(value: number) {
   return Math.max(0, Math.round(value));
 }
@@ -675,9 +731,11 @@ function buildMetricSet(
   revenuePerConversion: number,
   newUserRate: number,
   activeSites: number,
+  conversionRate = conversions / Math.max(remixes, 1),
 ): RankingMetricSet {
   return {
     activeSites,
+    conversionRate,
     views,
     previews,
     remixes,
@@ -690,6 +748,7 @@ function buildMetricSet(
 function scaleMetricSet(metrics: RankingMetricSet, multiplier: number): RankingMetricSet {
   return {
     activeSites: roundMetricValue(metrics.activeSites * multiplier),
+    conversionRate: metrics.conversionRate,
     views: roundMetricValue(metrics.views * multiplier),
     previews: roundMetricValue(metrics.previews * multiplier),
     remixes: roundMetricValue(metrics.remixes * multiplier),
@@ -706,6 +765,7 @@ function buildLifetimeMetricSet(
 ): RankingMetricSet {
   return {
     activeSites: metrics.activeSites,
+    conversionRate: metrics.conversionRate,
     views: metrics.views,
     previews: metrics.previews,
     remixes: metrics.remixes,
@@ -810,12 +870,14 @@ function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string)
     seed.revenuePerConversion,
     seed.newUserRate,
     activeSites.week,
+    seed.conversionRates?.week,
   );
   const month = buildMetricSet(
     seed.month,
     seed.revenuePerConversion,
     seed.newUserRate,
     activeSites.month,
+    seed.conversionRates?.month,
   );
   const quarter = seed.quarter
     ? buildMetricSet(
@@ -823,6 +885,7 @@ function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string)
         seed.revenuePerConversion,
         seed.newUserRate,
         activeSites.quarter ?? roundMetricValue(activeSites.month * 2.75),
+        seed.conversionRates?.quarter,
       )
     : scaleMetricSet(month, 2.75);
   const lifetime = seed.lifetime
@@ -841,6 +904,7 @@ function buildDefinitionFromSeed(seed: TemplateSeed, fallbackThumbnail?: string)
     ...seed,
     activeSites,
     lifetime,
+    templateId: seed.templateId ?? hashString(seed.name),
     thumbnailUrl: seed.thumbnailUrl ?? fallbackThumbnail,
     trendingFeatureCounts,
     week,
@@ -893,6 +957,7 @@ export function getRankingSettings(settings: SidebarSettingsState): RankingSetti
       "Age Priority",
       "Reserved share",
     ),
+    reservedShareWindowSize: Number.MAX_SAFE_INTEGER,
     viewsWeight: getNumericSettingValue(settings, "Weight Metrics", "Views"),
     previewsWeight: getNumericSettingValue(settings, "Weight Metrics", "Previews"),
     remixesWeight: getNumericSettingValue(settings, "Weight Metrics", "Remixes"),
@@ -1193,13 +1258,9 @@ function getTemplateScoreDetails(
     settings.activeSiteRateWeight * lifetimeActiveSiteRate,
   );
 
-  const conversionRate =
-    recentMetrics.conversions / Math.max(recentMetrics.remixes, 1);
-  const lifetimeConversionRate =
-    lifetimeMetrics.conversions / Math.max(lifetimeMetrics.remixes, 1);
   const conversionRateScore = blend(
-    settings.conversionRateWeight * conversionRate,
-    settings.conversionRateWeight * lifetimeConversionRate,
+    settings.conversionRateWeight * recentMetrics.conversionRate,
+    settings.conversionRateWeight * lifetimeMetrics.conversionRate,
   );
   const revenueEfficiency =
     recentMetrics.revenue / Math.max(recentMetrics.remixes, 1);
@@ -1332,10 +1393,12 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
 
       return {
         adminOverride: template.adminOverride,
+        antiDominanceMultiplier: undefined,
         ageDays: template.ageDays,
         category: template.category,
         creator: template.creator,
         daysInTrending: template.daysInTrending,
+        exposureStats: template.exposureStats,
         feedIneligibilityLabel: scoreDetails.feedIneligibilityLabel,
         isCurrentlyTrending: template.isCurrentlyTrending,
         isFeedEligible: scoreDetails.isFeedEligible,
@@ -1355,6 +1418,7 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
             previews: template.week.previews,
             remixes: template.week.remixes,
             activeSites: template.week.activeSites,
+            conversionRate: template.week.conversionRate,
             conversions: template.week.conversions,
             revenue: template.week.revenue,
             newUserActivations: template.week.newUserActivations,
@@ -1364,11 +1428,13 @@ export function scoreTemplates(settings: RankingSettings, seeds?: TemplateSeed[]
             previews: template.month.previews,
             remixes: template.month.remixes,
             activeSites: template.month.activeSites,
+            conversionRate: template.month.conversionRate,
             conversions: template.month.conversions,
             revenue: template.month.revenue,
             newUserActivations: template.month.newUserActivations,
           },
         },
+        templateId: template.templateId,
         trendingFeatureCounts: template.trendingFeatureCounts,
       };
     })
@@ -1471,6 +1537,10 @@ function buildFeedSelectionEntries(
   const usedNames = new Set<string>();
   const selection: FeedSelectionEntry[] = [];
   const selectionTemplates: RankedTemplate[] = [];
+  const reservedShareWindowSize = Math.max(
+    0,
+    Math.min(eligibleTemplates.length, settings.reservedShareWindowSize),
+  );
   const prioritizedPool = eligibleTemplates.filter(
     (template) =>
       template.explorationCandidate ||
@@ -1479,15 +1549,16 @@ function buildFeedSelectionEntries(
   );
   const prioritizedSlots = Math.min(
     prioritizedPool.length,
-    Math.round(eligibleTemplates.length * (settings.agePriorityReservedShare / 100)),
+    Math.round(reservedShareWindowSize * (settings.agePriorityReservedShare / 100)),
   );
   const prioritizedPositions = buildExplorationPositions(
-    eligibleTemplates.length,
+    reservedShareWindowSize,
     prioritizedSlots,
   );
 
   for (let position = 0; position < eligibleTemplates.length; position += 1) {
-    const reservedAgePriorityPosition = prioritizedPositions.has(position);
+    const reservedAgePriorityPosition =
+      position < reservedShareWindowSize && prioritizedPositions.has(position);
     const preferredPool = reservedAgePriorityPosition
       ? prioritizedPool
       : eligibleTemplates;

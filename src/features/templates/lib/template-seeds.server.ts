@@ -1,11 +1,8 @@
 import { BigQuery } from "@google-cloud/bigquery";
 
-import { createSidebarSettingsState } from "@/features/settings/lib/settings-state";
-import { templatesSidebarSections } from "@/features/templates/lib/sidebar-settings";
 import {
-  getFeedTemplates,
-  getRankingSettings,
-  scoreTemplates,
+  getDefaultTemplateSeeds,
+  type TemplateExposureStats,
   type TemplateSeed,
 } from "@/features/templates/lib/template-ranking";
 
@@ -13,6 +10,7 @@ const bigquery = new BigQuery();
 
 const QUERY = `
   SELECT
+    s.id AS template_id,
     s.title,
     s.creator,
     s.thumbnail,
@@ -35,6 +33,10 @@ const QUERY = `
     s.unique_user_remixes_all_time AS remixes_all_time,
     s.active_sites_all_time,
     s.sales,
+    s.conversion_rate_l7,
+    s.conversion_rate_l30,
+    s.conversion_rate_l90,
+    s.conversion_rate_all_time,
     t.categories,
     DATE_DIFF(CURRENT_DATE(), s.published_date, DAY) AS age_days
   FROM \`framer-data-analysis.marketplace.template_stats\` s
@@ -44,10 +46,21 @@ const QUERY = `
   ORDER BY s.views_l30 DESC
 `;
 
+const TEMPLATE_EXPOSURE_CONFIG_VERSION = "template2_30d_v1";
+const TEMPLATE_EXPOSURE_QUERY = `
+  SELECT
+    snapshot_date,
+    template_id,
+    display_rank
+  FROM \`framer-data-analysis.marketplace.template2_rank_daily\`
+  WHERE config_version = @configVersion
+    AND snapshot_date >= DATE_SUB(CURRENT_DATE(), INTERVAL 29 DAY)
+`;
+
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
-const CURRENT_TRENDING_SHARE = 0.06;
-const MIN_CURRENT_TRENDING = 24;
-const MAX_CURRENT_TRENDING = 240;
+const DEFAULT_POSITION_OUTSIDE_TOP_300 = 301;
+const EXPOSURE_LOOKBACK_DAYS = 30;
+const POSITION_CHANGE_LOOKBACK_DAYS = 14;
 const MANUAL_TRENDING_OVERRIDES = {
   "e.hunter": {
     daysInTrending: 5,
@@ -64,6 +77,10 @@ type BigQueryTemplateRow = {
   activeSitesAllTime: number;
   ageDays: number;
   categories: unknown;
+  conversionRate30: number;
+  conversionRate7: number;
+  conversionRate90: number;
+  conversionRateAllTime: number;
   creator: string;
   conversionsAllTime: number;
   name: string;
@@ -76,11 +93,18 @@ type BigQueryTemplateRow = {
   remixes7: number;
   remixes90: number;
   remixesAllTime: number;
+  templateId: number;
   thumbnailUrl?: string;
   views30: number;
   views7: number;
   views90: number;
   viewsAllTime: number;
+};
+
+type TemplateExposureSnapshotRow = {
+  displayRank: number;
+  snapshotDate: string;
+  templateId: number;
 };
 
 type SeedSynthesisContext = {
@@ -126,18 +150,6 @@ const FALLBACK_PALETTES = [
   ["#16100f", "#42221a", "#ff8c5a", "rgba(255, 147, 101, 0.35)"],
 ] as const;
 
-function ensureCurrentTrendingFeatureCounts(seed: TemplateSeed) {
-  if (!seed.trendingFeatureCounts) {
-    return seed.trendingFeatureCounts;
-  }
-
-  return {
-    last30Days: Math.max(seed.trendingFeatureCounts.last30Days, 1),
-    last90Days: Math.max(seed.trendingFeatureCounts.last90Days, 1),
-    lifetime: Math.max(seed.trendingFeatureCounts.lifetime, 1),
-  };
-}
-
 function toNumber(value: unknown) {
   const parsed = Number(value);
   return Number.isFinite(parsed) ? parsed : 0;
@@ -181,6 +193,7 @@ function getPrimaryCategory(rawCategories: unknown) {
 
 function normalizeBigQueryRow(row: Record<string, unknown>): BigQueryTemplateRow {
   return {
+    templateId: toNumber(row.template_id),
     name: String(row.title ?? "Untitled"),
     creator: String(row.creator ?? "Unknown"),
     categories: row.categories,
@@ -204,7 +217,152 @@ function normalizeBigQueryRow(row: Record<string, unknown>): BigQueryTemplateRow
     remixesAllTime: toNumber(row.remixes_all_time),
     activeSitesAllTime: toNumber(row.active_sites_all_time),
     conversionsAllTime: toNumber(row.sales),
+    conversionRate7: toNumber(row.conversion_rate_l7),
+    conversionRate30: toNumber(row.conversion_rate_l30),
+    conversionRate90: toNumber(row.conversion_rate_l90),
+    conversionRateAllTime: toNumber(row.conversion_rate_all_time),
   };
+}
+
+function normalizeSnapshotDate(value: unknown) {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === "string") {
+    return value.slice(0, 10);
+  }
+
+  return "";
+}
+
+function normalizeTemplateExposureSnapshotRow(
+  row: Record<string, unknown>,
+): TemplateExposureSnapshotRow | null {
+  const snapshotDate = normalizeSnapshotDate(row.snapshot_date);
+  const templateId = toNumber(row.template_id);
+  const displayRank = toNumber(row.display_rank);
+
+  if (!snapshotDate || templateId <= 0 || displayRank <= 0) {
+    return null;
+  }
+
+  return {
+    displayRank,
+    snapshotDate,
+    templateId,
+  };
+}
+
+function getTemplateExposureWeight(displayRank: number) {
+  if (displayRank <= 12) {
+    return 8;
+  }
+
+  if (displayRank <= 48) {
+    return 4;
+  }
+
+  if (displayRank <= 120) {
+    return 2;
+  }
+
+  if (displayRank <= 300) {
+    return 1;
+  }
+
+  return 0;
+}
+
+function formatDateKey(date: Date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function addUtcDays(date: Date, days: number) {
+  const result = new Date(date);
+  result.setUTCDate(result.getUTCDate() + days);
+  return result;
+}
+
+function getDefaultExposureStats(ageDays: number): TemplateExposureStats {
+  return {
+    avgAbsPositionChange14: 0,
+    explorationEligible: ageDays <= 45,
+    top48StreakDays: 0,
+    top300ExposureDays30: 0,
+    weightedExposure30: 0,
+  };
+}
+
+function buildExposureStatsByTemplate(
+  rows: TemplateExposureSnapshotRow[],
+) {
+  const statsByTemplateId = new Map<number, Omit<TemplateExposureStats, "explorationEligible">>();
+
+  if (rows.length === 0) {
+    return statsByTemplateId;
+  }
+
+  const latestSnapshotKey = rows.reduce(
+    (latest, row) => (row.snapshotDate > latest ? row.snapshotDate : latest),
+    rows[0]!.snapshotDate,
+  );
+  const latestSnapshotDate = new Date(`${latestSnapshotKey}T00:00:00.000Z`);
+  const positionsByTemplate = new Map<number, Map<string, number>>();
+
+  for (const row of rows) {
+    const positionsByDate =
+      positionsByTemplate.get(row.templateId) ?? new Map<string, number>();
+    positionsByDate.set(row.snapshotDate, row.displayRank);
+    positionsByTemplate.set(row.templateId, positionsByDate);
+  }
+
+  for (const [templateId, positionsByDate] of positionsByTemplate) {
+    const top300ExposureDays30 = positionsByDate.size;
+    const weightedExposure30 = Array.from(positionsByDate.values()).reduce(
+      (sum, displayRank) => sum + getTemplateExposureWeight(displayRank),
+      0,
+    );
+
+    let top48StreakDays = 0;
+    for (let offset = 0; offset < EXPOSURE_LOOKBACK_DAYS; offset += 1) {
+      const dateKey = formatDateKey(addUtcDays(latestSnapshotDate, -offset));
+      const displayRank = positionsByDate.get(dateKey);
+
+      if (displayRank !== undefined && displayRank <= 48) {
+        top48StreakDays += 1;
+        continue;
+      }
+
+      break;
+    }
+
+    const last14Positions = Array.from(
+      { length: POSITION_CHANGE_LOOKBACK_DAYS },
+      (_, index) => {
+        const offset = POSITION_CHANGE_LOOKBACK_DAYS - index - 1;
+        const dateKey = formatDateKey(addUtcDays(latestSnapshotDate, -offset));
+        return (
+          positionsByDate.get(dateKey) ?? DEFAULT_POSITION_OUTSIDE_TOP_300
+        );
+      },
+    );
+    const totalPositionChange = last14Positions.slice(1).reduce(
+      (sum, position, index) =>
+        sum + Math.abs(position - last14Positions[index]!),
+      0,
+    );
+
+    statsByTemplateId.set(templateId, {
+      avgAbsPositionChange14:
+        totalPositionChange / Math.max(last14Positions.length - 1, 1),
+      top48StreakDays,
+      top300ExposureDays30,
+      weightedExposure30,
+    });
+  }
+
+  return statsByTemplateId;
 }
 
 function computeGrowth(currentValue: number, baselineValue: number) {
@@ -333,53 +491,6 @@ function buildPreviewStyles(name: string, category: string, pricingType: Templat
   };
 }
 
-const defaultRankingSettings = getRankingSettings(
-  createSidebarSettingsState(templatesSidebarSections),
-);
-
-function applyCurrentTrendingAssignments(seeds: TemplateSeed[]) {
-  if (seeds.length === 0) {
-    return seeds;
-  }
-
-  const currentTrendingCount = clamp(
-    Math.round(seeds.length * CURRENT_TRENDING_SHARE),
-    MIN_CURRENT_TRENDING,
-    Math.min(MAX_CURRENT_TRENDING, seeds.length),
-  );
-  const rankedTemplates = getFeedTemplates(
-    scoreTemplates(defaultRankingSettings, seeds),
-    defaultRankingSettings,
-  );
-  const currentTrendingRanks = new Map(
-    rankedTemplates
-      .slice(0, currentTrendingCount)
-      .map((template, index) => [template.name, index] as const),
-  );
-
-  return seeds.map((seed) => {
-    const trendingRank = currentTrendingRanks.get(seed.name);
-
-    if (trendingRank === undefined) {
-      return {
-        ...seed,
-        isCurrentlyTrending: false,
-        daysInTrending: 0,
-        daysSinceLastTrending: seed.daysSinceLastTrending,
-      };
-    }
-
-    const rankRatio = trendingRank / Math.max(currentTrendingCount - 1, 1);
-    return {
-      ...seed,
-      isCurrentlyTrending: true,
-      daysInTrending: clamp(Math.round(1 + rankRatio * 5), 1, 6),
-      daysSinceLastTrending: null,
-      trendingFeatureCounts: ensureCurrentTrendingFeatureCounts(seed),
-    };
-  });
-}
-
 function applyManualTrendingOverrides(seeds: TemplateSeed[]) {
   return seeds.map((seed) => {
     const override =
@@ -407,6 +518,10 @@ function applyManualTrendingOverrides(seeds: TemplateSeed[]) {
 function synthesizeSeed(
   row: BigQueryTemplateRow,
   context: SeedSynthesisContext,
+  exposureStatsByTemplateId: ReadonlyMap<
+    number,
+    Omit<TemplateExposureStats, "explorationEligible">
+  >,
 ): TemplateSeed {
   const isFree = row.price === 0;
   const category = getPrimaryCategory(row.categories);
@@ -421,10 +536,6 @@ function synthesizeSeed(
   const trendSignal = popularityScore * 0.72 + clamp((growthScore + 0.2) / 0.5, 0, 1) * 0.28;
   const isCurrentlyTrending =
     trendSignal >= 0.68 || (popularityScore >= 0.82 && growthScore > -0.02);
-  const explorationCandidate =
-    !isCurrentlyTrending &&
-    row.ageDays <= 45 &&
-    (currentPreviewGrowth >= 0.08 || currentRemixGrowth >= 0.08);
   const daysInTrending = isCurrentlyTrending
     ? clamp(Math.round(1 + popularityScore * 4 - Math.max(growthScore, 0) * 3), 1, 6)
     : 0;
@@ -450,6 +561,16 @@ function synthesizeSeed(
     isCurrentlyTrending,
     daysSinceLastTrending,
   );
+  const historicalExposureStats = exposureStatsByTemplateId.get(row.templateId);
+  const exposureStats: TemplateExposureStats = historicalExposureStats
+    ? {
+        ...historicalExposureStats,
+        explorationEligible:
+          historicalExposureStats.top300ExposureDays30 <= 3 ||
+          row.ageDays <= 45,
+      }
+    : getDefaultExposureStats(row.ageDays);
+  const explorationCandidate = exposureStats.explorationEligible;
   const { previewBase, previewGlow } = buildPreviewStyles(
     row.name,
     category,
@@ -457,6 +578,7 @@ function synthesizeSeed(
   );
 
   return {
+    templateId: row.templateId,
     name: row.name,
     creator: row.creator,
     category,
@@ -466,6 +588,12 @@ function synthesizeSeed(
     week: [row.views7, row.previews7, row.remixes7, conversions.week],
     month: [row.views30, row.previews30, row.remixes30, conversions.month],
     quarter: [row.views90, row.previews90, row.remixes90, conversions.quarter],
+    conversionRates: {
+      week: row.conversionRate7,
+      month: row.conversionRate30,
+      quarter: row.conversionRate90,
+      lifetime: row.conversionRateAllTime,
+    },
     activeSites: {
       week: row.activeSites7,
       month: row.activeSites30,
@@ -477,9 +605,11 @@ function synthesizeSeed(
       remixes: row.remixesAllTime,
       activeSites: row.activeSitesAllTime,
       conversions: row.conversionsAllTime,
+      conversionRate: row.conversionRateAllTime,
     },
     revenuePerConversion: row.price,
     newUserRate: estimateNewUserRate(row, currentPreviewGrowth),
+    exposureStats,
     trendingFeatureCounts,
     ageDays: row.ageDays,
     isCurrentlyTrending,
@@ -497,18 +627,52 @@ export async function fetchTemplateSeeds(): Promise<TemplateSeed[]> {
     return cachedSeeds;
   }
 
-  const [rows] = await bigquery.query({ query: QUERY });
-  const normalizedRows = rows.map((row: Record<string, unknown>) => normalizeBigQueryRow(row));
-  const context: SeedSynthesisContext = {
-    maxMonthViews: Math.max(...normalizedRows.map((row) => row.views30), 1),
-    maxMonthRemixes: Math.max(...normalizedRows.map((row) => row.remixes30), 1),
-  };
-  const synthesizedSeeds = normalizedRows.map((row) => synthesizeSeed(row, context));
-  const seeds = applyManualTrendingOverrides(
-    applyCurrentTrendingAssignments(synthesizedSeeds),
-  );
+  try {
+    const [rows] = await bigquery.query({ query: QUERY });
+    let normalizedExposureRows: TemplateExposureSnapshotRow[] = [];
 
-  cachedSeeds = seeds;
-  cachedAt = Date.now();
-  return seeds;
+    try {
+      const [exposureRows] = await bigquery.query({
+        params: { configVersion: TEMPLATE_EXPOSURE_CONFIG_VERSION },
+        query: TEMPLATE_EXPOSURE_QUERY,
+      });
+      normalizedExposureRows = exposureRows
+        .map((row: Record<string, unknown>) => normalizeTemplateExposureSnapshotRow(row))
+        .filter((row): row is TemplateExposureSnapshotRow => row !== null);
+    } catch (error) {
+      console.error(
+        "Template exposure query failed, continuing without exposure history:",
+        error,
+      );
+    }
+
+    const normalizedRows = rows.map((row: Record<string, unknown>) =>
+      normalizeBigQueryRow(row),
+    );
+    const exposureStatsByTemplateId = buildExposureStatsByTemplate(
+      normalizedExposureRows,
+    );
+    const context: SeedSynthesisContext = {
+      maxMonthViews: Math.max(...normalizedRows.map((row) => row.views30), 1),
+      maxMonthRemixes: Math.max(...normalizedRows.map((row) => row.remixes30), 1),
+    };
+    const synthesizedSeeds = normalizedRows.map((row) =>
+      synthesizeSeed(row, context, exposureStatsByTemplateId),
+    );
+    const seeds = applyManualTrendingOverrides(synthesizedSeeds);
+
+    cachedSeeds = seeds;
+    cachedAt = Date.now();
+    return seeds;
+  } catch (error) {
+    console.error(
+      "Primary BigQuery template query failed, using built-in fallback seeds:",
+      error,
+    );
+    const fallbackSeeds = getDefaultTemplateSeeds();
+
+    cachedSeeds = fallbackSeeds;
+    cachedAt = Date.now();
+    return fallbackSeeds;
+  }
 }
